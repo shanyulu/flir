@@ -167,16 +167,16 @@ SplatCmpConverter::matchAndRewrite(arith::CmpIOp cmpOp,
   }
   auto lhsSrc = lhsSplatOp.getSrc();
   auto rhsSrc = rhsSplatOp.getSrc();
-  auto newCmpOp = rewriter.create<arith::CmpIOp>(
-      cmpOp.getLoc(), cmpOp.getPredicate(), lhsSrc, rhsSrc);
+  auto newCmpOp = arith::CmpIOp::create(rewriter, cmpOp.getLoc(),
+                                        cmpOp.getPredicate(), lhsSrc, rhsSrc);
   auto cmpType = dyn_cast<RankedTensorType>(cmpOp.getType());
   if (!cmpType) {
     return failure();
   }
   auto splatType =
       RankedTensorType::get(cmpType.getShape(), newCmpOp.getType());
-  auto splatOp = rewriter.create<triton::SplatOp>(cmpOp.getLoc(), splatType,
-                                                  newCmpOp.getResult());
+  auto splatOp = triton::SplatOp::create(rewriter, cmpOp.getLoc(), splatType,
+                                         newCmpOp.getResult());
   rewriter.replaceOp(cmpOp, splatOp.getResult());
   return success();
 }
@@ -229,15 +229,15 @@ AddPtrSplatConverter::matchAndRewrite(triton::AddPtrOp addPtrOp,
 
   // Create splat of ptrSrc to the smaller shape
   auto smallPtrSplat =
-      rewriter.create<triton::SplatOp>(loc, smallPtrTensorType, ptrSrc);
+      triton::SplatOp::create(rewriter, loc, smallPtrTensorType, ptrSrc);
 
   // Create addptr on the smaller shape
-  auto smallAdd = rewriter.create<triton::AddPtrOp>(
-      loc, smallPtrTensorType, smallPtrSplat.getResult(), offsetSrc);
+  auto smallAdd = triton::AddPtrOp::create(
+      rewriter, loc, smallPtrTensorType, smallPtrSplat.getResult(), offsetSrc);
 
   // Broadcast the small add result back to the original (larger) shape
-  auto broadcasted = rewriter.create<triton::BroadcastOp>(loc, resultType,
-                                                          smallAdd.getResult());
+  auto broadcasted = triton::BroadcastOp::create(rewriter, loc, resultType,
+                                                 smallAdd.getResult());
 
   rewriter.replaceOp(addPtrOp, broadcasted.getResult());
   return success();
@@ -331,19 +331,19 @@ LoadBroadcastConverter::matchAndRewrite(triton::LoadOp loadOp,
       return failure();
     }
 
-    auto constOp = rewriter.create<arith::ConstantOp>(loc, newDense);
+    auto constOp = arith::ConstantOp::create(rewriter, loc, newDense);
     newOther = constOp.getResult();
   }
 
-  auto newLoad = rewriter.create<triton::LoadOp>(
-      loc, smallPtr, maskSrc, newOther, cache, evict, isVolatile);
+  auto newLoad = triton::LoadOp::create(rewriter, loc, smallPtr, maskSrc,
+                                        newOther, cache, evict, isVolatile);
 
   // Broadcast result back to original result type
   auto resultType = dyn_cast<RankedTensorType>(loadOp.getResult().getType());
   if (!resultType)
     return failure();
-  auto broadcasted = rewriter.create<triton::BroadcastOp>(loc, resultType,
-                                                          newLoad.getResult());
+  auto broadcasted = triton::BroadcastOp::create(rewriter, loc, resultType,
+                                                 newLoad.getResult());
 
   rewriter.replaceOp(loadOp, broadcasted.getResult());
   return success();
@@ -653,8 +653,8 @@ PromotePointerIterArgsPattern::createNewIterArgs(
   for (unsigned i = 0; i < forOp.getInitArgs().size(); ++i) {
     if (isPointerArgIndex(pointerArgs, i)) {
       // Replace pointer with integer offset (initialized to 0)
-      Value zero = rewriter.create<arith::ConstantIntOp>(forOp.getLoc(), 0,
-                                                         INT_TYPE_BIT_WIDTH);
+      Value zero = arith::ConstantIntOp::create(rewriter, forOp.getLoc(), 0,
+                                                INT_TYPE_BIT_WIDTH);
       newInitArgs.push_back(zero);
       newIterArgTypes.push_back(rewriter.getIntegerType(INT_TYPE_BIT_WIDTH));
     } else {
@@ -705,7 +705,7 @@ PromotePointerIterArgsPattern::createNewIterArgsForAdvancePtr(
 
       if (infoTemp->offsetValues.empty()) {
         Value zero =
-            rewriter.create<arith::ConstantIntOp>(forOp.getLoc(), 0, 32);
+            arith::ConstantIntOp::create(rewriter, forOp.getLoc(), 0, 32);
         newInitArgs.push_back(zero);
         newIterArgTypes.push_back(rewriter.getIntegerType(INT_TYPE_BIT_WIDTH));
         newInitArgsTemp.push_back(zero);
@@ -713,7 +713,7 @@ PromotePointerIterArgsPattern::createNewIterArgsForAdvancePtr(
             rewriter.getIntegerType(INT_TYPE_BIT_WIDTH));
       } else {
         Value zero =
-            rewriter.create<arith::ConstantIntOp>(forOp.getLoc(), 0, 32);
+            arith::ConstantIntOp::create(rewriter, forOp.getLoc(), 0, 32);
         for (size_t j = 0; j < infoTemp->offsetValues.size(); ++j) {
           Value offset = infoTemp->offsetValues[j];
           if (auto maskInt = getConstantIntValue(offset)) {
@@ -745,9 +745,9 @@ PromotePointerIterArgsPattern::createNewIterArgsForAdvancePtr(
 scf::ForOp PromotePointerIterArgsPattern::createNewForLoop(
     scf::ForOp forOp, ArrayRef<Value> newInitArgs,
     ArrayRef<Type> newIterArgTypes, PatternRewriter &rewriter) const {
-  return rewriter.create<scf::ForOp>(forOp.getLoc(), forOp.getLowerBound(),
-                                     forOp.getUpperBound(), forOp.getStep(),
-                                     newInitArgs);
+  return scf::ForOp::create(rewriter, forOp.getLoc(), forOp.getLowerBound(),
+                            forOp.getUpperBound(), forOp.getStep(),
+                            newInitArgs);
 }
 
 LogicalResult PromotePointerIterArgsPattern::rewriteLoopBody(
@@ -874,16 +874,16 @@ Value PromotePointerIterArgsPattern::rebuildPointer(
     // Get the shape of the original tensor
     auto shape = rankedType.getShape();
 
-    splatOffset = rewriter.create<triton::SplatOp>(
-        forOp.getLoc(), RankedTensorType::get(shape, rewriter.getI32Type()),
-        info->newIterArg);
+    splatOffset = triton::SplatOp::create(
+        rewriter, forOp.getLoc(),
+        RankedTensorType::get(shape, rewriter.getI32Type()), info->newIterArg);
   } else {
     return nullptr;
   }
   // Create addptr operation: base pointer + splatted offset
-  return rewriter.create<triton::AddPtrOp>(forOp.getLoc(),
-                                           info->basePointer.getType(),
-                                           info->basePointer, splatOffset);
+  return triton::AddPtrOp::create(rewriter, forOp.getLoc(),
+                                  info->basePointer.getType(),
+                                  info->basePointer, splatOffset);
 }
 
 Value PromotePointerIterArgsPattern::rebuildPointerForAdvancePtr(
@@ -910,8 +910,8 @@ Value PromotePointerIterArgsPattern::rebuildPointerForAdvancePtr(
     }
     advanceOpOld.push_back(info->offsetValues[i]);
   }
-  auto advanceOp = rewriter.create<triton::AdvanceOp>(
-      forOp.getLoc(), info->basePointer.getType(), advanceOpOld);
+  auto advanceOp = triton::AdvanceOp::create(
+      rewriter, forOp.getLoc(), info->basePointer.getType(), advanceOpOld);
   return advanceOp;
 }
 
@@ -1015,7 +1015,7 @@ LogicalResult PromotePointerIterArgsPattern::cloneYieldOpForAdvancePtr(
   }
   // Create the new yield operation in the transformed loop
   auto newYieldOp =
-      rewriter.create<scf::YieldOp>(yieldOp.getLoc(), newOperands);
+      scf::YieldOp::create(rewriter, yieldOp.getLoc(), newOperands);
   return success();
 }
 
@@ -1042,7 +1042,7 @@ LogicalResult PromotePointerIterArgsPattern::cloneYieldOp(
     }
   }
   // Create the new yield operation in the transformed loop
-  rewriter.create<scf::YieldOp>(yieldOp.getLoc(), newOperands);
+  scf::YieldOp::create(rewriter, yieldOp.getLoc(), newOperands);
   return success();
 }
 
@@ -1080,7 +1080,7 @@ SmallVector<Value> PromotePointerIterArgsPattern::createOffsetsForAdvancePtr(
         }
 
         Value result =
-            rewriter.create<arith::AddIOp>(loc, info->newIterArg, offset);
+            arith::AddIOp::create(rewriter, loc, info->newIterArg, offset);
         offsets.push_back(result);
       }
     }
@@ -1106,9 +1106,10 @@ Value PromotePointerIterArgsPattern::createIntegerAdd(
     Location loc = info->offsetValue.getLoc();
     // Case 1: Integer attribute (scalar constant)
     if (auto intAttr = dyn_cast<IntegerAttr>(offsetAttr)) {
-      Value constOffset = rewriter.create<arith::ConstantIntOp>(
-          loc, intAttr.getInt(), INT_TYPE_BIT_WIDTH);
-      return rewriter.create<arith::AddIOp>(loc, info->newIterArg, constOffset);
+      Value constOffset = arith::ConstantIntOp::create(
+          rewriter, loc, intAttr.getInt(), INT_TYPE_BIT_WIDTH);
+      return arith::AddIOp::create(rewriter, loc, info->newIterArg,
+                                   constOffset);
     }
     // Case 2: DenseElementsAttr (tensor constant)
     if (auto denseAttr = dyn_cast<DenseElementsAttr>(offsetAttr)) {
@@ -1117,19 +1118,19 @@ Value PromotePointerIterArgsPattern::createIntegerAdd(
         // For integer-type DenseElementsAttr
         if (denseAttr.getElementType().isInteger(INT_TYPE_BIT_WIDTH)) {
           auto splatValue = denseAttr.getSplatValue<APInt>();
-          Value constOffset = rewriter.create<arith::ConstantIntOp>(
-              loc, splatValue.getZExtValue(), INT_TYPE_BIT_WIDTH);
-          return rewriter.create<arith::AddIOp>(loc, info->newIterArg,
-                                                constOffset);
+          Value constOffset = arith::ConstantIntOp::create(
+              rewriter, loc, splatValue.getZExtValue(), INT_TYPE_BIT_WIDTH);
+          return arith::AddIOp::create(rewriter, loc, info->newIterArg,
+                                       constOffset);
         }
       } else {
         // If not a splat, but has only one element, we can still handle it
         if (denseAttr.getNumElements() == 1) {
           auto firstElement = *denseAttr.getValues<APInt>().begin();
-          Value constOffset = rewriter.create<arith::ConstantIntOp>(
-              loc, firstElement.getZExtValue(), INT_TYPE_BIT_WIDTH);
-          return rewriter.create<arith::AddIOp>(loc, info->newIterArg,
-                                                constOffset);
+          Value constOffset = arith::ConstantIntOp::create(
+              rewriter, loc, firstElement.getZExtValue(), INT_TYPE_BIT_WIDTH);
+          return arith::AddIOp::create(rewriter, loc, info->newIterArg,
+                                       constOffset);
         }
       }
     }
@@ -1189,10 +1190,10 @@ SmallVector<Value> PromotePointerIterArgsPattern::reconstructPointerForAdvance(
       if (*maskInt == 0) {
         continue;
       }
-      Value constOffset = rewriter.create<arith::ConstantIntOp>(
-          forOp.getLoc(), *maskInt, INT_TYPE_BIT_WIDTH);
-      Value addPtrResult = rewriter.create<arith::AddIOp>(
-          forOp.getLoc(), newInitArgs[i], constOffset);
+      Value constOffset = arith::ConstantIntOp::create(
+          rewriter, forOp.getLoc(), *maskInt, INT_TYPE_BIT_WIDTH);
+      Value addPtrResult = arith::AddIOp::create(rewriter, forOp.getLoc(),
+                                                 newInitArgs[i], constOffset);
       addPtr.push_back(addPtrResult);
     }
   }
@@ -1219,18 +1220,18 @@ Value PromotePointerIterArgsPattern::reconstructPointer(
     // Get the shape of the original tensor
     auto shape = rankedType.getShape();
 
-    splatOffset = rewriter.create<triton::SplatOp>(
-        forOp.getLoc(), RankedTensorType::get(shape, rewriter.getI32Type()),
-        intResult);
+    splatOffset = triton::SplatOp::create(
+        rewriter, forOp.getLoc(),
+        RankedTensorType::get(shape, rewriter.getI32Type()), intResult);
   } else {
     return nullptr;
   }
 
   // Create a tensor with the same shape, where all elements are the integer
   // result
-  return rewriter.create<triton::AddPtrOp>(forOp.getLoc(),
-                                           info->basePointer.getType(),
-                                           info->basePointer, splatOffset);
+  return triton::AddPtrOp::create(rewriter, forOp.getLoc(),
+                                  info->basePointer.getType(),
+                                  info->basePointer, splatOffset);
 }
 
 void SimplifyTensorIterArgsPattern::ShapeChainInfo::dump() const {
@@ -1263,18 +1264,18 @@ Value SimplifyTensorIterArgsPattern::cloneShapeChain(
   for (Operation *op : chain) {
     if (auto splat = dyn_cast<triton::SplatOp>(op)) {
       auto dstTy = cast<RankedTensorType>(splat.getType());
-      cur = rewriter.create<triton::SplatOp>(loc, dstTy, cur);
+      cur = triton::SplatOp::create(rewriter, loc, dstTy, cur);
       continue;
     }
     if (auto bcast = dyn_cast<triton::BroadcastOp>(op)) {
       auto dstTy = cast<RankedTensorType>(bcast.getType());
-      cur = rewriter.create<triton::BroadcastOp>(loc, dstTy, cur);
+      cur = triton::BroadcastOp::create(rewriter, loc, dstTy, cur);
       continue;
     }
     if (auto expand = dyn_cast<triton::ExpandDimsOp>(op)) {
       auto dstTy = cast<RankedTensorType>(expand.getType());
-      cur = rewriter.create<triton::ExpandDimsOp>(loc, dstTy, cur,
-                                                  expand.getAxis());
+      cur = triton::ExpandDimsOp::create(rewriter, loc, dstTy, cur,
+                                         expand.getAxis());
       continue;
     }
     return Value();
@@ -1514,7 +1515,7 @@ Value SimplifyTensorIterArgsPattern::getNewConstLikeOperand(
   }
   auto splatAttr =
       DenseElementsAttr::get(tensorTy, dense.getSplatValue<Attribute>());
-  return rewriter.create<arith::ConstantOp>(cst.getLoc(), tensorTy, splatAttr);
+  return arith::ConstantOp::create(rewriter, cst.getLoc(), tensorTy, splatAttr);
 }
 
 bool SimplifyTensorIterArgsPattern::canBuildConstLikeOperand(
@@ -1805,22 +1806,22 @@ Value SimplifyTensorIterArgsPattern::createSameBinaryArithOp(
     Operation *oldOp, Location loc, Value lhs, Value rhs,
     PatternRewriter &rewriter) const {
   if (isa<arith::AddIOp>(oldOp))
-    return rewriter.create<arith::AddIOp>(loc, lhs, rhs).getResult();
+    return arith::AddIOp::create(rewriter, loc, lhs, rhs).getResult();
   if (isa<arith::SubIOp>(oldOp))
-    return rewriter.create<arith::SubIOp>(loc, lhs, rhs).getResult();
+    return arith::SubIOp::create(rewriter, loc, lhs, rhs).getResult();
   if (isa<arith::MulIOp>(oldOp))
-    return rewriter.create<arith::MulIOp>(loc, lhs, rhs).getResult();
+    return arith::MulIOp::create(rewriter, loc, lhs, rhs).getResult();
   if (isa<arith::DivSIOp>(oldOp))
-    return rewriter.create<arith::DivSIOp>(loc, lhs, rhs).getResult();
+    return arith::DivSIOp::create(rewriter, loc, lhs, rhs).getResult();
 
   if (isa<arith::AddFOp>(oldOp))
-    return rewriter.create<arith::AddFOp>(loc, lhs, rhs).getResult();
+    return arith::AddFOp::create(rewriter, loc, lhs, rhs).getResult();
   if (isa<arith::SubFOp>(oldOp))
-    return rewriter.create<arith::SubFOp>(loc, lhs, rhs).getResult();
+    return arith::SubFOp::create(rewriter, loc, lhs, rhs).getResult();
   if (isa<arith::MulFOp>(oldOp))
-    return rewriter.create<arith::MulFOp>(loc, lhs, rhs).getResult();
+    return arith::MulFOp::create(rewriter, loc, lhs, rhs).getResult();
   if (isa<arith::DivFOp>(oldOp))
-    return rewriter.create<arith::DivFOp>(loc, lhs, rhs).getResult();
+    return arith::DivFOp::create(rewriter, loc, lhs, rhs).getResult();
 
   return Value();
 }
@@ -1880,9 +1881,9 @@ SimplifyTensorIterArgsPattern::rewriteForWithLocalCandidates(
     newInitArgs.push_back(v);
   }
 
-  auto newFor = rewriter.create<scf::ForOp>(
-      forOp.getLoc(), forOp.getLowerBound(), forOp.getUpperBound(),
-      forOp.getStep(), newInitArgs);
+  auto newFor =
+      scf::ForOp::create(rewriter, forOp.getLoc(), forOp.getLowerBound(),
+                         forOp.getUpperBound(), forOp.getStep(), newInitArgs);
   newFor->setAttr(kIncompleteAttr, rewriter.getUnitAttr());
 
   auto failAfterCreate = [&]() -> LogicalResult {
@@ -1999,7 +2000,7 @@ SimplifyTensorIterArgsPattern::rewriteForWithLocalCandidates(
       newYieldOperands.push_back(mapped);
     }
   }
-  rewriter.create<scf::YieldOp>(oldYield.getLoc(), newYieldOperands);
+  scf::YieldOp::create(rewriter, oldYield.getLoc(), newYieldOperands);
   if (newFor->hasAttr(kIncompleteAttr)) {
     newFor->removeAttr(kIncompleteAttr);
   }
@@ -2200,9 +2201,9 @@ SimplifyTensorIterArgsPattern::rewriteOuterForWithRelayCandidates(
   }
 
   rewriter.setInsertionPoint(outerFor);
-  auto newOuterFor = rewriter.create<scf::ForOp>(
-      outerFor.getLoc(), outerFor.getLowerBound(), outerFor.getUpperBound(),
-      outerFor.getStep(), newOuterInitArgs);
+  auto newOuterFor = scf::ForOp::create(
+      rewriter, outerFor.getLoc(), outerFor.getLowerBound(),
+      outerFor.getUpperBound(), outerFor.getStep(), newOuterInitArgs);
   newOuterFor->setAttr(kIncompleteAttr, rewriter.getUnitAttr());
 
   auto failAfterCreate = [&]() -> FailureOr<scf::ForOp> {
@@ -2329,7 +2330,7 @@ SimplifyTensorIterArgsPattern::rewriteOuterForWithRelayCandidates(
   }
 
   rewriter.setInsertionPointToEnd(newOuterFor.getBody());
-  rewriter.create<scf::YieldOp>(oldOuterYield.getLoc(), newOuterYieldOps);
+  scf::YieldOp::create(rewriter, oldOuterYield.getLoc(), newOuterYieldOps);
 
   if (newOuterFor->hasAttr(kIncompleteAttr)) {
     newOuterFor->removeAttr(kIncompleteAttr);
@@ -2428,7 +2429,7 @@ Value IfYieldAddHoistConverter::buildZeroTensorLikeType(
   }
 
   auto zeroTensorAttr = DenseElementsAttr::get(tensorType, zeroElemAttr);
-  return rewriter.create<arith::ConstantOp>(loc, laneType, zeroTensorAttr);
+  return arith::ConstantOp::create(rewriter, loc, laneType, zeroTensorAttr);
 }
 
 bool IfYieldAddHoistConverter::tryRewriteSingleLane(
@@ -2533,9 +2534,9 @@ IfYieldAddHoistConverter::matchAndRewrite(scf::IfOp ifOp,
   }
 
   rewriter.setInsertionPoint(ifOp);
-  auto rewrittenIfOp = rewriter.create<scf::IfOp>(loc, ifOp.getResultTypes(),
-                                                  ifOp.getCondition(),
-                                                  /* withElseRegion= */ true);
+  auto rewrittenIfOp = scf::IfOp::create(rewriter, loc, ifOp.getResultTypes(),
+                                         ifOp.getCondition(),
+                                         /* withElseRegion= */ true);
 
   {
     IRMapping thenMapping;
@@ -2553,7 +2554,7 @@ IfYieldAddHoistConverter::matchAndRewrite(scf::IfOp ifOp,
       mappedThenYieldOperands.push_back(thenMapping.lookupOrDefault(v));
     }
 
-    rewriter.create<scf::YieldOp>(loc, mappedThenYieldOperands);
+    scf::YieldOp::create(rewriter, loc, mappedThenYieldOperands);
   }
 
   {
@@ -2572,7 +2573,7 @@ IfYieldAddHoistConverter::matchAndRewrite(scf::IfOp ifOp,
       mappedElseYieldOperands.push_back(elseMapping.lookupOrDefault(v));
     }
 
-    rewriter.create<scf::YieldOp>(loc, mappedElseYieldOperands);
+    scf::YieldOp::create(rewriter, loc, mappedElseYieldOperands);
   }
 
   rewriter.setInsertionPointAfter(rewrittenIfOp);
@@ -2596,10 +2597,10 @@ IfYieldAddHoistConverter::matchAndRewrite(scf::IfOp ifOp,
     Value reconstructedLane;
     if (isa<FloatType>(elemType)) {
       reconstructedLane =
-          rewriter.create<arith::AddFOp>(loc, hoistedBase, laneDelta);
+          arith::AddFOp::create(rewriter, loc, hoistedBase, laneDelta);
     } else if (elemType.isIntOrIndex()) {
       reconstructedLane =
-          rewriter.create<arith::AddIOp>(loc, hoistedBase, laneDelta);
+          arith::AddIOp::create(rewriter, loc, hoistedBase, laneDelta);
     } else {
       return failure();
     }

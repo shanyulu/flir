@@ -256,8 +256,8 @@ LogicalResult TritonToLinalgIncubatedPass::convertMultipleBlockControlFlow(
     builder.setInsertionPointAfter(insertPosOp);
 
     // Well, here force to destory original control flow
-    builder.create<scf::IfOp>(
-        condBranchOp->getLoc(), condBranchOp.getCondition(),
+    scf::IfOp::create(
+        builder, condBranchOp->getLoc(), condBranchOp.getCondition(),
         /*thenBuilder=*/
         [&](OpBuilder &builder, Location loc) {
           SmallVector<Operation *> movedOps = llvm::map_to_vector(
@@ -281,7 +281,7 @@ LogicalResult TritonToLinalgIncubatedPass::convertMultipleBlockControlFlow(
                 "Unsupported terminator in then branch after structuring");
           }
 
-          builder.create<scf::YieldOp>(loc);
+          scf::YieldOp::create(builder, loc);
         },
         /*elseBuilder=*/
         [&](OpBuilder &builder, Location loc) {
@@ -305,7 +305,7 @@ LogicalResult TritonToLinalgIncubatedPass::convertMultipleBlockControlFlow(
             blockTerm->emitError(
                 "Unsupported terminator in else branch after structuring");
           }
-          builder.create<scf::YieldOp>(loc);
+          scf::YieldOp::create(builder, loc);
         });
   };
 
@@ -325,7 +325,7 @@ LogicalResult TritonToLinalgIncubatedPass::convertMultipleBlockControlFlow(
 
   OpBuilder::InsertionGuard guard(builder);
   builder.setInsertionPoint(candidate.front());
-  builder.create<triton::ReturnOp>(candidate.front()->getLoc());
+  triton::ReturnOp::create(builder, candidate.front()->getLoc());
 
   for (Operation *eachTerm : candidate)
     eachTerm->erase();
@@ -400,7 +400,7 @@ void TritonToLinalgIncubatedPass::convertTTFunc(triton::FuncOp func,
   }
   auto castType = FunctionType::get(func.getContext(), inputTypes, retTypes);
 
-  auto funcFunc = builder.create<func::FuncOp>(func.getLoc(), name, castType);
+  auto funcFunc = func::FuncOp::create(builder, func.getLoc(), name, castType);
   funcFunc.setAllArgAttrs(argAttrs);
   funcFunc.setAllResultAttrs(resAttrs);
   auto kernelAttr = func->getAttr(globalKernelAttr);
@@ -444,7 +444,7 @@ void TritonToLinalgIncubatedPass::convertTTFunc(triton::FuncOp func,
   for (Block &block : funcFuncBody.getBlocks()) {
     auto term = block.getTerminator();
     builder.setInsertionPoint(term);
-    builder.create<func::ReturnOp>(func.getLoc(), term->getOperands());
+    func::ReturnOp::create(builder, func.getLoc(), term->getOperands());
     term->erase();
   }
   func.erase();
@@ -975,7 +975,7 @@ void TritonToLinalgIncubatedPass::runOnOperation() {
         IRRewriter rewriter(op->getContext());
         rewriter.setInsertionPointAfter(op);
         auto newVal =
-            rewriter.create<tensor::CastOp>(op->getLoc(), res.getType(), res);
+            tensor::CastOp::create(rewriter, op->getLoc(), res.getType(), res);
         rewriter.replaceAllUsesExcept(res, newVal, newVal);
       }
     }
@@ -1020,12 +1020,12 @@ void TritonToLinalgIncubatedPass::runOnOperation() {
         cast<MemRefType>(op.getResult().getType()).getElementType();
     Value elementTypeSize;
     if (auto intType = dyn_cast<IntegerType>(elementType)) {
-      elementTypeSize = rewriter.create<arith::ConstantOp>(
-          op.getLoc(),
+      elementTypeSize = arith::ConstantOp::create(
+          rewriter, op.getLoc(),
           rewriter.getIntegerAttr(addr.getType(), intType.getWidth() / 8));
     } else if (auto floatType = dyn_cast<FloatType>(elementType)) {
-      elementTypeSize = rewriter.create<arith::ConstantOp>(
-          op.getLoc(),
+      elementTypeSize = arith::ConstantOp::create(
+          rewriter, op.getLoc(),
           rewriter.getIntegerAttr(addr.getType(), floatType.getWidth() / 8));
     } else {
       llvm_unreachable("Cannot get memory size");
@@ -1049,37 +1049,38 @@ void TritonToLinalgIncubatedPass::runOnOperation() {
           castOpSize = size * stride;
       }
       rewriter.setInsertionPoint(reinterpretCastOp);
-      Value dynamicSize = rewriter.create<arith::ConstantOp>(
-          op.getLoc(), rewriter.getIndexAttr(castOpSize));
+      Value dynamicSize = arith::ConstantOp::create(
+          rewriter, op.getLoc(), rewriter.getIndexAttr(castOpSize));
       for (const auto &[size, stride] :
            llvm::zip_equal(dynamicSizes, strides)) {
-        Value axisSize = rewriter.create<arith::ConstantOp>(
-            op.getLoc(), rewriter.getIndexAttr(size));
+        Value axisSize = arith::ConstantOp::create(rewriter, op.getLoc(),
+                                                   rewriter.getIndexAttr(size));
         axisSize =
-            rewriter.create<arith::MulIOp>(op.getLoc(), stride, axisSize);
+            arith::MulIOp::create(rewriter, op.getLoc(), stride, axisSize);
         dynamicSize =
-            rewriter.create<arith::AddIOp>(op.getLoc(), dynamicSize, axisSize);
+            arith::AddIOp::create(rewriter, op.getLoc(), dynamicSize, axisSize);
       }
       Value offsetValue;
       auto staticOffset = reinterpretCastOp.getStaticOffsets()[0];
       if (ShapedType::isDynamic(staticOffset)) {
         offsetValue = reinterpretCastOp.getOffsets()[0];
         if (offsetValue.getType() != addr.getType())
-          offsetValue = rewriter.create<arith::IndexCastOp>(
-              op.getLoc(), addr.getType(), offsetValue);
+          offsetValue = arith::IndexCastOp::create(rewriter, op.getLoc(),
+                                                   addr.getType(), offsetValue);
       } else {
-        offsetValue = rewriter.create<arith::ConstantOp>(
-            op.getLoc(), rewriter.getIntegerAttr(addr.getType(), staticOffset));
+        offsetValue = arith::ConstantOp::create(
+            rewriter, op.getLoc(),
+            rewriter.getIntegerAttr(addr.getType(), staticOffset));
       }
-      offsetValue = rewriter.create<arith::MulIOp>(op.getLoc(), offsetValue,
-                                                   elementTypeSize);
+      offsetValue = arith::MulIOp::create(rewriter, op.getLoc(), offsetValue,
+                                          elementTypeSize);
       Value realAddr =
-          rewriter.create<arith::AddIOp>(op.getLoc(), addr, offsetValue);
+          arith::AddIOp::create(rewriter, op.getLoc(), addr, offsetValue);
       auto memrefType = MemRefType::get({ShapedType::kDynamic}, elementType);
-      auto newCastOp = rewriter.create<hivm::PointerCastOp>(
-          op.getLoc(), memrefType, realAddr, dynamicSize);
-      auto markOp = rewriter.create<annotation::MarkOp>(op.getLoc(),
-                                                        newCastOp.getResult());
+      auto newCastOp = hivm::PointerCastOp::create(
+          rewriter, op.getLoc(), memrefType, realAddr, dynamicSize);
+      auto markOp = annotation::MarkOp::create(rewriter, op.getLoc(),
+                                               newCastOp.getResult());
       markOp->setAttr(hivm::AddressSpaceAttr::getMnemonic(),
                       {hivm::AddressSpaceAttr::get(rewriter.getContext(),
                                                    hivm::AddressSpace::GM)});

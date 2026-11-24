@@ -132,9 +132,9 @@ LogicalResult LoadConverter::matchAndRewrite(triton::LoadOp op,
 
   auto newBoundaryCheck = tf.getBoundaryCheck(op.getBoundaryCheck());
 
-  auto loadOp = rewriter.create<triton::LoadOp>(
-      loc, newPtr, newMask, newOther, newBoundaryCheck, op.getPadding(),
-      op.getCache(), op.getEvict(), op.getIsVolatile());
+  auto loadOp = triton::LoadOp::create(
+      rewriter, loc, newPtr, newMask, newOther, newBoundaryCheck,
+      op.getPadding(), op.getCache(), op.getEvict(), op.getIsVolatile());
 
   auto permuteResult =
       tf.materializeImplicitPermute(loadOp.getResult(), loc, rewriter);
@@ -186,9 +186,9 @@ LogicalResult StoreConverter::matchAndRewrite(triton::StoreOp op,
 
   auto newBoundaryCheck = tf.getBoundaryCheck(op.getBoundaryCheck());
 
-  auto storeOp = rewriter.create<triton::StoreOp>(loc, newPtr, permuteResult,
-                                                  newMask, newBoundaryCheck,
-                                                  op.getCache(), op.getEvict());
+  auto storeOp =
+      triton::StoreOp::create(rewriter, loc, newPtr, permuteResult, newMask,
+                              newBoundaryCheck, op.getCache(), op.getEvict());
 
   rewriter.eraseOp(op);
   return success();
@@ -230,9 +230,9 @@ AtomicRMWConverter::matchAndRewrite(triton::AtomicRMWOp op,
 
   Type newAtomicResTy = newVal.getType();
 
-  auto newAtomic = rewriter.create<triton::AtomicRMWOp>(
-      loc, newAtomicResTy, op.getAtomicRmwOp(), newPtr, newVal, newMask,
-      op.getSem(), op.getScope());
+  auto newAtomic = triton::AtomicRMWOp::create(
+      rewriter, loc, newAtomicResTy, op.getAtomicRmwOp(), newPtr, newVal,
+      newMask, op.getSem(), op.getScope());
 
   // The returned old value should be in OLD layout for users => permute back
   // (load-side).
@@ -277,8 +277,9 @@ AtomicCASConverter::matchAndRewrite(triton::AtomicCASOp op,
   // CAS result (old value) must have same shape as cmp/val operands.
   Type newAtomicResTy = newVal.getType();
 
-  auto newAtomic = rewriter.create<triton::AtomicCASOp>(
-      loc, newAtomicResTy, newPtr, newCmp, newVal, op.getSem(), op.getScope());
+  auto newAtomic =
+      triton::AtomicCASOp::create(rewriter, loc, newAtomicResTy, newPtr, newCmp,
+                                  newVal, op.getSem(), op.getScope());
 
   MemOpTransformer tfLoad(MemOpTransformer::MemType::load);
   tfLoad.ptrState = tf.ptrState;
@@ -327,7 +328,7 @@ Value MemOpTransformer::materializeImplicitPermute(Value srcTensor,
 
   auto outTy = RankedTensorType::get(outShape, inTy.getElementType());
   auto transOp =
-      rewriter.create<triton::TransOp>(loc, outTy, srcTensor, permuteOrder);
+      triton::TransOp::create(rewriter, loc, outTy, srcTensor, permuteOrder);
   return transOp.getResult();
 }
 
@@ -421,8 +422,8 @@ Value MemOpTransformer::createNewAdvancePtr(Value oldPtr, const Location loc,
   for (size_t i = rank; i-- > 0;) {
     newOffsets.push_back(oldOffsets[ptrState.order[i]]);
   }
-  return rewriter.create<triton::AdvanceOp>(loc, newBasePtr.getType(),
-                                            newBasePtr, newOffsets);
+  return triton::AdvanceOp::create(rewriter, loc, newBasePtr.getType(),
+                                   newBasePtr, newOffsets);
 }
 
 Value MemOpTransformer::createNewMask(Value oldMask, const Location loc,
@@ -567,10 +568,10 @@ Value MemOpTransformer::createNewOther(Value oldOther, const Location loc,
       targetShape);
   auto targetShapeType = RankedTensorType::get(targetShape, elementType);
   auto targetShapeValue =
-      rewriter.create<arith::ConstantOp>(loc, targetShapeAttr);
+      arith::ConstantOp::create(rewriter, loc, targetShapeAttr);
 
-  auto reshapeOp = rewriter.create<tensor::ReshapeOp>(
-      loc, targetShapeType, oldOther, targetShapeValue);
+  auto reshapeOp = tensor::ReshapeOp::create(rewriter, loc, targetShapeType,
+                                             oldOther, targetShapeValue);
 
   return reshapeOp.getResult();
 }

@@ -341,14 +341,14 @@ LogicalResult PtrAnalysis::initStateByScalar(Value operand, PtrState &state,
     if (!isa<BlockArgument>(operand) && operand.getDefiningOp()) {
       builder.setInsertionPointAfter(operand.getDefiningOp());
     }
-    auto castOp = builder.create<arith::IndexCastOp>(
-        loc, builder.getIndexType(), operand);
+    auto castOp = arith::IndexCastOp::create(builder, loc,
+                                             builder.getIndexType(), operand);
     newOffset = castOp.getResult();
   } else if (isa<IndexType>(operand.getType())) {
     newOffset = operand;
   } else {
     auto tensorType = dyn_cast<mlir::RankedTensorType>(operand.getType());
-    auto index = builder.create<mlir::arith::ConstantIndexOp>(loc, 0);
+    auto index = mlir::arith::ConstantIndexOp::create(builder, loc, 0);
     auto zeroAttr = builder.getIndexAttr(0);
     auto oneAttr = builder.getIndexAttr(1);
     SmallVector<mlir::Value> indices;
@@ -358,7 +358,7 @@ LogicalResult PtrAnalysis::initStateByScalar(Value operand, PtrState &state,
       newStateInfo.emplace_back(zeroAttr, oneAttr, i);
     }
     auto extractedElement =
-        builder.create<mlir::tensor::ExtractOp>(loc, operand, indices);
+        mlir::tensor::ExtractOp::create(builder, loc, operand, indices);
     newOffset = extractedElement.getResult();
   }
   state.updatePtrState(newStateInfo, newSizes, nullptr, newOffset, loc,
@@ -618,11 +618,11 @@ triton::AddPtrOp PtrState::createAddPtrOp(OpBuilder &builder, Location loc) {
   if (tensorSizes.empty()) {
     Value offsetValue = materializeValue(builder, loc, offset);
     if (offsetValue.getType().isIndex()) {
-      offsetValue = builder.create<arith::IndexCastOp>(
-          loc, builder.getI32Type(), offsetValue);
+      offsetValue = arith::IndexCastOp::create(
+          builder, loc, builder.getI32Type(), offsetValue);
     }
-    auto addptrOp = builder.create<triton::AddPtrOp>(loc, source.getType(),
-                                                     source, offsetValue);
+    auto addptrOp = triton::AddPtrOp::create(builder, loc, source.getType(),
+                                             source, offsetValue);
     return addptrOp;
   }
 
@@ -645,19 +645,19 @@ triton::AddPtrOp PtrState::createAddPtrOp(OpBuilder &builder, Location loc) {
     // make range
     auto indexI32RowType =
         RankedTensorType::get({tensorSizes[i]}, builder.getI32Type());
-    Value makeRangeOp = builder.create<triton::MakeRangeOp>(
-        loc, indexI32RowType, 0, tensorSizes[i]);
+    Value makeRangeOp = triton::MakeRangeOp::create(
+        builder, loc, indexI32RowType, 0, tensorSizes[i]);
 
     // multiply stride
     Value strideValue = materializeValue(builder, loc, tensorStrides[i]);
     if (strideValue.getType().isIndex()) {
-      strideValue = builder.create<arith::IndexCastOp>(
-          loc, builder.getI32Type(), strideValue);
+      strideValue = arith::IndexCastOp::create(
+          builder, loc, builder.getI32Type(), strideValue);
     }
     Value splatStride =
-        builder.create<triton::SplatOp>(loc, indexI32RowType, strideValue);
+        triton::SplatOp::create(builder, loc, indexI32RowType, strideValue);
     auto rangeAfterMul =
-        builder.create<arith::MulIOp>(loc, makeRangeOp, splatStride);
+        arith::MulIOp::create(builder, loc, makeRangeOp, splatStride);
 
     // reshape
     Value expandedValue = rangeAfterMul;
@@ -665,12 +665,12 @@ triton::AddPtrOp PtrState::createAddPtrOp(OpBuilder &builder, Location loc) {
       if (j == i)
         continue;
       expandedValue =
-          builder.create<triton::ExpandDimsOp>(loc, expandedValue, j);
+          triton::ExpandDimsOp::create(builder, loc, expandedValue, j);
     }
 
     // broadcast
     auto broadcastValue =
-        builder.create<triton::BroadcastOp>(loc, broadCastType, expandedValue);
+        triton::BroadcastOp::create(builder, loc, broadCastType, expandedValue);
     cachedRange.push_back(broadcastValue);
   }
 
@@ -678,24 +678,24 @@ triton::AddPtrOp PtrState::createAddPtrOp(OpBuilder &builder, Location loc) {
   Value rangeAfterCombine = cachedRange[0];
   for (size_t i = 1; i < cachedRange.size(); ++i) {
     rangeAfterCombine =
-        builder.create<arith::AddIOp>(loc, rangeAfterCombine, cachedRange[i]);
+        arith::AddIOp::create(builder, loc, rangeAfterCombine, cachedRange[i]);
   }
 
   // addOffset
   Value addValue = materializeValue(builder, loc, offset);
   if (addValue.getType().isIndex()) {
-    addValue =
-        builder.create<arith::IndexCastOp>(loc, builder.getI32Type(), addValue);
+    addValue = arith::IndexCastOp::create(builder, loc, builder.getI32Type(),
+                                          addValue);
   }
   Value splatOffset =
-      builder.create<triton::SplatOp>(loc, broadCastType, addValue);
+      triton::SplatOp::create(builder, loc, broadCastType, addValue);
   auto rangeAfterAdd =
-      builder.create<arith::AddIOp>(loc, rangeAfterCombine, splatOffset);
+      arith::AddIOp::create(builder, loc, rangeAfterCombine, splatOffset);
 
   // addPtr
-  Value splatPtr = builder.create<triton::SplatOp>(loc, ptrTensorType, source);
-  auto addptrOp = builder.create<triton::AddPtrOp>(loc, ptrTensorType, splatPtr,
-                                                   rangeAfterAdd);
+  Value splatPtr = triton::SplatOp::create(builder, loc, ptrTensorType, source);
+  auto addptrOp = triton::AddPtrOp::create(builder, loc, ptrTensorType,
+                                           splatPtr, rangeAfterAdd);
   return addptrOp;
 }
 
@@ -740,8 +740,8 @@ triton::MakeTensorPtrOp PtrState::createMakeTensorPtrOp(OpBuilder &builder,
     newOrder.push_back(static_cast<int32_t>(i));
   }
 
-  return builder.create<triton::MakeTensorPtrOp>(
-      loc, source, ValueRange(newShape), ValueRange(newStrides),
+  return triton::MakeTensorPtrOp::create(
+      builder, loc, source, ValueRange(newShape), ValueRange(newStrides),
       ValueRange(newOffsets), newBlkShape, newOrder);
 }
 

@@ -202,7 +202,7 @@ Value BubbleUpExtract<tensor::ExtractOp>::createExtractOp(
     tensor::ExtractOp op, Value value, Location loc,
     PatternRewriter &rewriter) const {
   auto extractedOp =
-      rewriter.create<tensor::ExtractOp>(loc, value, op.getIndices());
+      tensor::ExtractOp::create(rewriter, loc, value, op.getIndices());
   extractedOp->setAttr(ConverterUtils::discreteAttrName,
                        UnitAttr::get(rewriter.getContext()));
   return extractedOp;
@@ -214,9 +214,9 @@ Value BubbleUpExtract<tensor::ExtractSliceOp>::createExtractOp(
     PatternRewriter &rewriter) const {
   auto extractedType = getExtractSlicedType(
       op.getMixedSizes(), op.getDroppedDims(), getElementTypeOrSelf(value));
-  auto extractedOp = rewriter.create<tensor::ExtractSliceOp>(
-      loc, extractedType, value, op.getMixedOffsets(), op.getMixedSizes(),
-      op.getMixedStrides());
+  auto extractedOp = tensor::ExtractSliceOp::create(
+      rewriter, loc, extractedType, value, op.getMixedOffsets(),
+      op.getMixedSizes(), op.getMixedStrides());
   extractedOp->setAttr(ConverterUtils::discreteAttrName,
                        UnitAttr::get(rewriter.getContext()));
   return extractedOp;
@@ -289,12 +289,12 @@ void BubbleUpExtract<tensor::ExtractOp>::bubbleUpOperation(
        llvm::zip_equal(op.getIndices(), srcShape)) {
     if (shape == 1) {
       newIndices.push_back(
-          rewriter.create<arith::ConstantOp>(loc, rewriter.getIndexAttr(0)));
+          arith::ConstantOp::create(rewriter, loc, rewriter.getIndexAttr(0)));
     } else {
       newIndices.push_back(index);
     }
   }
-  auto extractedOp = rewriter.create<tensor::ExtractOp>(loc, src, newIndices);
+  auto extractedOp = tensor::ExtractOp::create(rewriter, loc, src, newIndices);
   extractedOp->setAttr(ConverterUtils::discreteAttrName,
                        UnitAttr::get(rewriter.getContext()));
   rewriter.replaceOp(op, extractedOp);
@@ -323,16 +323,17 @@ void BubbleUpExtract<tensor::ExtractSliceOp>::bubbleUpOperation(
   }
   auto extractedType = getExtractSlicedType(newSizes, op.getDroppedDims(),
                                             getElementTypeOrSelf(src));
-  auto extractedOp = rewriter.create<tensor::ExtractSliceOp>(
-      loc, extractedType, src, newOffsets, newSizes, op.getMixedStrides());
+  auto extractedOp = tensor::ExtractSliceOp::create(
+      rewriter, loc, extractedType, src, newOffsets, newSizes,
+      op.getMixedStrides());
   extractedOp->setAttr(ConverterUtils::discreteAttrName,
                        UnitAttr::get(rewriter.getContext()));
   if (isScalarLikeSrc) {
     SmallVector<Value> indices(
         extractedType.getRank(),
-        rewriter.create<arith::ConstantOp>(loc, rewriter.getIndexAttr(0)));
+        arith::ConstantOp::create(rewriter, loc, rewriter.getIndexAttr(0)));
     auto extractedValue =
-        rewriter.create<tensor::ExtractOp>(loc, extractedOp, indices);
+        tensor::ExtractOp::create(rewriter, loc, extractedOp, indices);
     rewriter.replaceOpWithNewOp<triton::SplatOp>(op, op.getResult().getType(),
                                                  extractedValue);
   } else {
@@ -351,7 +352,7 @@ void BubbleUpExtract<tensor::ExtractOp>::bubbleUpOperation(
     if (index.index() != parentOp.getAxis())
       newIndices.push_back(index.value());
   }
-  auto extractedOp = rewriter.create<tensor::ExtractOp>(loc, src, newIndices);
+  auto extractedOp = tensor::ExtractOp::create(rewriter, loc, src, newIndices);
   extractedOp->setAttr(ConverterUtils::discreteAttrName,
                        UnitAttr::get(rewriter.getContext()));
   rewriter.replaceOp(op, extractedOp);
@@ -388,8 +389,8 @@ void BubbleUpExtract<tensor::ExtractSliceOp>::bubbleUpOperation(
   if (extractedType == src.getType()) {
     rewriter.replaceOp(op, src);
   } else {
-    auto extractedOp = rewriter.create<tensor::ExtractSliceOp>(
-        loc, extractedType, src, newOffsets, newSizes, newStrides);
+    auto extractedOp = tensor::ExtractSliceOp::create(
+        rewriter, loc, extractedType, src, newOffsets, newSizes, newStrides);
     extractedOp->setAttr(ConverterUtils::discreteAttrName,
                          UnitAttr::get(rewriter.getContext()));
     rewriter.replaceOpWithNewOp<triton::ExpandDimsOp>(op, extractedOp,
@@ -421,13 +422,13 @@ void BubbleUpExtract<tensor::ExtractOp>::bubbleUpOperation(
   auto resultType = cast<RankedTensorType>(parentOp.getResult().getType());
   int32_t start = parentOp.getStart();
   Value idx = op.getIndices()[0];
-  Value result = rewriter.create<arith::IndexCastOp>(
-      op.getLoc(), resultType.getElementType(), idx);
+  Value result = arith::IndexCastOp::create(rewriter, op.getLoc(),
+                                            resultType.getElementType(), idx);
   if (start != 0) {
-    Value startVal = rewriter.create<arith::ConstantOp>(
-        op.getLoc(),
+    Value startVal = arith::ConstantOp::create(
+        rewriter, op.getLoc(),
         rewriter.getIntegerAttr(resultType.getElementType(), start));
-    result = rewriter.create<arith::AddIOp>(op.getLoc(), result, startVal);
+    result = arith::AddIOp::create(rewriter, op.getLoc(), result, startVal);
   }
   rewriter.replaceOp(op, result);
 }
@@ -439,8 +440,8 @@ void BubbleUpExtract<tensor::ExtractSliceOp>::bubbleUpOperation(
   auto resultType = cast<RankedTensorType>(parentOp.getResult().getType());
   auto idxOfr = op.getMixedOffsets()[0];
   Value idx = getValueOrCreateConstantIndexOp(rewriter, op.getLoc(), idxOfr);
-  idx = rewriter.create<arith::IndexCastOp>(op.getLoc(),
-                                            resultType.getElementType(), idx);
+  idx = arith::IndexCastOp::create(rewriter, op.getLoc(),
+                                   resultType.getElementType(), idx);
   rewriter.replaceOpWithNewOp<triton::SplatOp>(op, op.getResult().getType(),
                                                idx);
 }
@@ -538,8 +539,8 @@ void BubbleUpExtract<tensor::ExtractOp>::bubbleUpOperation(
   auto droppedDims = parentOp.getDroppedDims();
   for (auto [idx, offset] : llvm::enumerate(parentOp.getMixedOffsets())) {
     if (droppedDims[idx]) {
-      auto zeroIdx = rewriter.create<arith::ConstantOp>(
-          op.getLoc(), rewriter.getIndexAttr(0));
+      auto zeroIdx = arith::ConstantOp::create(rewriter, op.getLoc(),
+                                               rewriter.getIndexAttr(0));
       indices.push_back(zeroIdx);
     } else {
       indices.push_back(*indiceIter);
@@ -551,7 +552,7 @@ void BubbleUpExtract<tensor::ExtractOp>::bubbleUpOperation(
     Value offsetVal =
         getValueOrCreateConstantIndexOp(rewriter, op.getLoc(), offset);
     newIndices.push_back(
-        rewriter.create<arith::AddIOp>(op.getLoc(), offsetVal, index));
+        arith::AddIOp::create(rewriter, op.getLoc(), offsetVal, index));
   }
   rewriter
       .replaceOpWithNewOp<tensor::ExtractOp>(op, parentOp.getSource(),

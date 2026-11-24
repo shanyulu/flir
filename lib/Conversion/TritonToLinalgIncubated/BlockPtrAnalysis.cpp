@@ -345,15 +345,15 @@ memref::ReinterpretCastOp BlockData::createCastOp(ArrayRef<int64_t> resultShape,
     if (resultShape[i] == 1) {
       if (auto strideValue = dyn_cast<Value>(strides[i])) {
         auto oneIdx =
-            builder.create<arith::ConstantOp>(loc, builder.getIndexAttr(1));
-        strides[i] = builder.create<arith::MaxSIOp>(loc, strideValue, oneIdx)
+            arith::ConstantOp::create(builder, loc, builder.getIndexAttr(1));
+        strides[i] = arith::MaxSIOp::create(builder, loc, strideValue, oneIdx)
                          .getResult();
       }
     }
   }
 
-  return builder.create<memref::ReinterpretCastOp>(
-      loc, resultType, this->source, resOffset, this->sizes, strides);
+  return memref::ReinterpretCastOp::create(
+      builder, loc, resultType, this->source, resOffset, this->sizes, strides);
 }
 
 void BlockData::dump() const {
@@ -531,11 +531,11 @@ void BlockDataParser::parseAtomicRmw(
   if (auto shapedResTy = dyn_cast<ShapedType>(opResTy)) {
     resShape = shapedResTy.getShape().vec();
     if (resShape.size() == 1 && resShape[0] == 1) {
-      Value zeroIdx = rewriter.create<arith::ConstantIndexOp>(loc, 0);
+      Value zeroIdx = arith::ConstantIndexOp::create(rewriter, loc, 0);
       Value extracted =
-          rewriter.create<tensor::ExtractOp>(loc, opRes, ValueRange{zeroIdx});
-      Value scalarIdx = rewriter.create<arith::IndexCastOp>(
-          loc, rewriter.getIndexType(), extracted);
+          tensor::ExtractOp::create(rewriter, loc, opRes, ValueRange{zeroIdx});
+      Value scalarIdx = arith::IndexCastOp::create(
+          rewriter, loc, rewriter.getIndexType(), extracted);
       data.setMemAccVal(MemAccVal::StrucMemAcc);
       data.setScalar(scalarIdx);
       data.getSizesRef().push_back(rewriter.getIndexAttr(1));
@@ -699,8 +699,8 @@ void BlockDataParser::parseExtractSlice(
   if (shape.size() > 1 || shape[0] > 1) {
     llvm_unreachable(scenarioMessages.c_str());
   }
-  auto castOp = rewriter.create<arith::IndexCastOp>(
-      loc, RankedTensorType::get(shape, rewriter.getIndexType()),
+  auto castOp = arith::IndexCastOp::create(
+      rewriter, loc, RankedTensorType::get(shape, rewriter.getIndexType()),
       extract_result);
   auto offset = castOp.getResult();
   if (data.isEmpty()) {
@@ -973,8 +973,8 @@ void BlockDataParser::parseReduce(
     llvm_unreachable(scenarioMessages.c_str());
   }
 
-  auto castOp = rewriter.create<arith::IndexCastOp>(
-      loc, RankedTensorType::get(shape, rewriter.getIndexType()),
+  auto castOp = arith::IndexCastOp::create(
+      rewriter, loc, RankedTensorType::get(shape, rewriter.getIndexType()),
       reduce_result);
   auto offset = castOp.getResult();
   if (data.isEmpty()) {
@@ -1003,11 +1003,11 @@ void parseIndirectLoad(OpTy op, BlockData &data, const Location &loc,
     auto numOperands = 3;
     if (resShape.size() == 1 && resShape[0] == 1 &&
         op->getNumOperands() == numOperands) {
-      Value zeroIdx = rewriter.create<arith::ConstantIndexOp>(loc, 0);
+      Value zeroIdx = arith::ConstantIndexOp::create(rewriter, loc, 0);
       Value extracted =
-          rewriter.create<tensor::ExtractOp>(loc, opRes, ValueRange{zeroIdx});
-      Value scalarIdx = rewriter.create<arith::IndexCastOp>(
-          loc, rewriter.getIndexType(), extracted);
+          tensor::ExtractOp::create(rewriter, loc, opRes, ValueRange{zeroIdx});
+      Value scalarIdx = arith::IndexCastOp::create(
+          rewriter, loc, rewriter.getIndexType(), extracted);
       data.setMemAccVal(MemAccVal::StrucMemAcc);
       data.setScalar(scalarIdx);
       data.getSizesRef().push_back(rewriter.getIndexAttr(1));
@@ -1118,13 +1118,13 @@ void BlockDataParser::parseSelect(
     Value trueScalar = nullptr;
     Value falseScalar = nullptr;
     if (auto tInt = dyn_cast<IntegerAttr>(trueFirst)) {
-      trueScalar = rewriter.create<arith::ConstantOp>(loc, tInt).getResult();
+      trueScalar = arith::ConstantOp::create(rewriter, loc, tInt).getResult();
     } else {
       llvm_unreachable("unsupported true dense element attr in parseSelect");
     }
 
     if (auto fInt = dyn_cast<IntegerAttr>(falseFirst)) {
-      falseScalar = rewriter.create<arith::ConstantOp>(loc, fInt).getResult();
+      falseScalar = arith::ConstantOp::create(rewriter, loc, fInt).getResult();
     } else {
       llvm_unreachable("unsupported false dense element attr in parseSelect");
     }
@@ -1132,8 +1132,8 @@ void BlockDataParser::parseSelect(
     assert(trueScalar.getType() == falseScalar.getType() &&
            "scalarized true/false type mismatch");
 
-    auto scalarSelect = rewriter.create<arith::SelectOp>(
-        loc, trueScalar.getType(), cond, trueScalar, falseScalar);
+    auto scalarSelect = arith::SelectOp::create(
+        rewriter, loc, trueScalar.getType(), cond, trueScalar, falseScalar);
 
     indexOfr = getOpFoldResultOfLayoutInfo(scalarSelect.getResult(), rewriter);
   } else {
@@ -1145,10 +1145,10 @@ void BlockDataParser::parseSelect(
     SmallVector<Value> indices;
     indices.reserve(loopLimit);
     for (size_t i = 0; i < loopLimit; ++i) {
-      indices.push_back(rewriter.create<arith::ConstantIndexOp>(loc, 0));
+      indices.push_back(arith::ConstantIndexOp::create(rewriter, loc, 0));
     }
 
-    auto extractOp = rewriter.create<tensor::ExtractOp>(loc, res, indices);
+    auto extractOp = tensor::ExtractOp::create(rewriter, loc, res, indices);
     indexOfr = extractOp.getResult();
     if (isa<IntegerType>(extractOp.getType())) {
       indexOfr = getOpFoldResultOfLayoutInfo(extractOp.getResult(), rewriter);
@@ -1234,8 +1234,9 @@ void BlockDataParser::rewriteAddPtr(
     auto rtype = cast<triton::PointerType>(intToPtrOp.getResult().getType());
     auto memrefType =
         MemRefType::get({ShapedType::kDynamic}, rtype.getPointeeType());
-    auto hivmPointCastOp = rewriter.create<hivm::PointerCastOp>(
-        intToPtrOp.getLoc(), memrefType, ValueRange{intToPtrOp.getSrc()});
+    auto hivmPointCastOp =
+        hivm::PointerCastOp::create(rewriter, intToPtrOp.getLoc(), memrefType,
+                                    ValueRange{intToPtrOp.getSrc()});
     data.setSource(hivmPointCastOp.getResult());
   }
 
@@ -1244,8 +1245,8 @@ void BlockDataParser::rewriteAddPtr(
     auto memrefType = dyn_cast<BaseMemRefType>(data.getSourceRef().getType())
                           .cloneWith(std::nullopt, data.getResElemTyRef());
     UnrealizedConversionCastOp castOp =
-        rewriter.create<mlir::UnrealizedConversionCastOp>(
-            op.getLoc(), memrefType, data.getSourceRef());
+        mlir::UnrealizedConversionCastOp::create(
+            rewriter, op.getLoc(), memrefType, data.getSourceRef());
     data.setSource(castOp.getOutputs()[0]);
   }
 
@@ -1295,8 +1296,9 @@ void BlockDataParser::rewriteCustomOp(
       auto rtype = cast<triton::PointerType>(intToPtrOp.getResult().getType());
       auto memrefType =
           MemRefType::get({ShapedType::kDynamic}, rtype.getPointeeType());
-      auto hivmPointCastOp = rewriter.create<hivm::PointerCastOp>(
-          intToPtrOp.getLoc(), memrefType, ValueRange{intToPtrOp.getSrc()});
+      auto hivmPointCastOp =
+          hivm::PointerCastOp::create(rewriter, intToPtrOp.getLoc(), memrefType,
+                                      ValueRange{intToPtrOp.getSrc()});
       if (data.getSizesRef().size() == 0) {
         data.getSizesRef().push_back(rewriter.getIndexAttr(1));
         if (data.getScalarRef().isNull()) {
@@ -1354,12 +1356,12 @@ void BlockDataParser::rewriteCustomOp(
   }
   auto newCustomOp =
 #if LLVM_VERSION_MAJOR >= 22
-      rewriter.create<hivm::CustomOp>(loc, resultTypes, op.getName(), newInputs,
-                                      newOutputs, adaptor.getTempBuffers());
+      hivm::CustomOp::create(rewriter, loc, resultTypes, op.getName(),
+                             newInputs, newOutputs, adaptor.getTempBuffers());
 #else
-      rewriter.create<hivm::CustomOp>(loc, resultTypes,
-                                      rewriter.getStringAttr(op.getName()),
-                                      newInputs, newOutputs);
+      hivm::CustomOp::create(rewriter, loc, resultTypes,
+                             rewriter.getStringAttr(op.getName()), newInputs,
+                             newOutputs);
 #endif
   auto operandSegmentSizesAttr = newCustomOp->getAttr("operandSegmentSizes");
   newCustomOp->setAttrs(op->getAttrs());
@@ -1428,8 +1430,8 @@ void BlockDataParser::rewriteMakeTensorPtrOp(
     auto memrefType = dyn_cast<BaseMemRefType>(data.getSourceRef().getType())
                           .cloneWith(std::nullopt, data.getResElemTyRef());
     UnrealizedConversionCastOp castOp =
-        rewriter.create<mlir::UnrealizedConversionCastOp>(loc, memrefType,
-                                                          data.getSourceRef());
+        mlir::UnrealizedConversionCastOp::create(rewriter, loc, memrefType,
+                                                 data.getSourceRef());
     data.setSource(castOp.getOutputs()[0]);
   } else {
     data.setSource(rewriter.getRemappedValue(op.getBase()));
@@ -1437,9 +1439,9 @@ void BlockDataParser::rewriteMakeTensorPtrOp(
 
   data.getOffsetsRef() =
       std::move(llvm::map_to_vector(op.getOffsets(), [&](Value v) {
-        auto zeroVal = rewriter.create<arith::ConstantOp>(
-            loc, rewriter.getI32IntegerAttr(0));
-        v = rewriter.create<arith::MaxSIOp>(loc, v, zeroVal);
+        auto zeroVal = arith::ConstantOp::create(rewriter, loc,
+                                                 rewriter.getI32IntegerAttr(0));
+        v = arith::MaxSIOp::create(rewriter, loc, v, zeroVal);
         return getOpFoldResultOfLayoutInfo(v, rewriter);
       }));
   data.getStridesRef() =
@@ -1572,14 +1574,14 @@ void BlockDataParser::rewriteMakeTensorPtrOp(
     if (!extFunc) {
       OpBuilder::InsertionGuard guard(rewriter);
       rewriter.setInsertionPointToStart(&mod->getRegion(0).front());
-      extFunc = rewriter.create<func::FuncOp>(rewriter.getUnknownLoc(),
-                                              funcName, hintFuncType);
+      extFunc = func::FuncOp::create(rewriter, rewriter.getUnknownLoc(),
+                                     funcName, hintFuncType);
       extFunc.setPrivate();
       extFunc->setAttr(LLVM::LLVMDialect::getReadnoneAttrName(),
                        UnitAttr::get(rewriter.getContext()));
       rewriter.setInsertionPoint(op);
     }
-    rewriter.create<func::CallOp>(loc, funcName, dstElemTy, args);
+    func::CallOp::create(rewriter, loc, funcName, dstElemTy, args);
   }
 }
 
@@ -1742,8 +1744,8 @@ BlockDataParser::rewriteTerminator(
         assert(isa<IntegerAttr>(constOffset) &&
                dyn_cast<IntegerAttr>(constOffset).getInt() == 0 &&
                "attribute offsets should be zeroes");
-        auto constOp = rewriter.create<arith::ConstantOp>(
-            op.getLoc(), rewriter.getIndexAttr(0));
+        auto constOp = arith::ConstantOp::create(rewriter, op.getLoc(),
+                                                 rewriter.getIndexAttr(0));
         operands.push_back(constOp.getResult());
       } else {
         operands.push_back(cast<Value>(offset));
@@ -1765,8 +1767,8 @@ BlockDataParser::rewriteTerminator(
                  1);
         assert((strideVal == 1 || (strideVal == 0 && isSizeOne)) &&
                "attribute strides should be ones");
-        auto constOp = rewriter.create<arith::ConstantOp>(
-            op.getLoc(), rewriter.getIndexAttr(1));
+        auto constOp = arith::ConstantOp::create(rewriter, op.getLoc(),
+                                                 rewriter.getIndexAttr(1));
         operands.push_back(constOp.getResult());
       } else {
         operands.push_back(cast<Value>(stride));
@@ -1879,30 +1881,31 @@ Value createFromData(RankedTensorType resType, const BlockData &data,
     auto axisI32Type =
         RankedTensorType::get({resShape[i]}, builder.getIntegerType(32));
     Value axisValue =
-        builder.create<triton::MakeRangeOp>(loc, axisI32Type, 0, resShape[i]);
+        triton::MakeRangeOp::create(builder, loc, axisI32Type, 0, resShape[i]);
     if (axisType != axisI32Type) {
-      axisValue = builder.create<arith::ExtSIOp>(loc, axisType, axisValue);
+      axisValue = arith::ExtSIOp::create(builder, loc, axisType, axisValue);
     }
     Value offset = cast<Value>(data.getOffset(i));
-    Value offsetValue = builder.create<arith::IndexCastOp>(
-        loc, resType.getElementType(), offset);
-    offsetValue = builder.create<triton::SplatOp>(loc, axisType, offsetValue);
+    Value offsetValue = arith::IndexCastOp::create(
+        builder, loc, resType.getElementType(), offset);
+    offsetValue = triton::SplatOp::create(builder, loc, axisType, offsetValue);
     Value stride = cast<Value>(data.getStride(i));
     if (!isMaskIterArg) {
-      Value strideValue = builder.create<arith::IndexCastOp>(
-          loc, resType.getElementType(), stride);
-      strideValue = builder.create<triton::SplatOp>(loc, axisType, strideValue);
-      axisValue = builder.create<arith::MulIOp>(loc, axisValue, strideValue);
+      Value strideValue = arith::IndexCastOp::create(
+          builder, loc, resType.getElementType(), stride);
+      strideValue =
+          triton::SplatOp::create(builder, loc, axisType, strideValue);
+      axisValue = arith::MulIOp::create(builder, loc, axisValue, strideValue);
     }
-    axisValue = builder.create<arith::AddIOp>(loc, axisValue, offsetValue);
+    axisValue = arith::AddIOp::create(builder, loc, axisValue, offsetValue);
 
     for (size_t j = 0; j < resShape.size(); j++) {
       if (i != j)
-        axisValue = builder.create<triton::ExpandDimsOp>(loc, axisValue, j);
+        axisValue = triton::ExpandDimsOp::create(builder, loc, axisValue, j);
     }
-    axisValue = builder.create<triton::BroadcastOp>(loc, resType, axisValue);
+    axisValue = triton::BroadcastOp::create(builder, loc, resType, axisValue);
     if (newRes) {
-      newRes = builder.create<arith::AddIOp>(loc, newRes, axisValue);
+      newRes = arith::AddIOp::create(builder, loc, newRes, axisValue);
     } else {
       newRes = axisValue;
     }
@@ -2015,9 +2018,10 @@ void BlockDataParser::rewriteLoopOp(
       if (isa<Attribute>(dataOffset)) {
         auto constDataOffset = cast<Attribute>(dataOffset);
         assert(isa<IntegerAttr>(constDataOffset));
-        auto constOp = rewriter.create<arith::ConstantOp>(
-            op.getLoc(), rewriter.getIndexAttr(
-                             dyn_cast<IntegerAttr>(constDataOffset).getInt()));
+        auto constOp = arith::ConstantOp::create(
+            rewriter, op.getLoc(),
+            rewriter.getIndexAttr(
+                dyn_cast<IntegerAttr>(constDataOffset).getInt()));
         newInitArgs.push_back(constOp.getResult());
         dataOffset = constOp.getResult();
       } else {
@@ -2030,9 +2034,10 @@ void BlockDataParser::rewriteLoopOp(
       if (isa<Attribute>(dataStride)) {
         auto constDataStride = cast<Attribute>(dataStride);
         assert(isa<IntegerAttr>(constDataStride));
-        auto constOp = rewriter.create<arith::ConstantOp>(
-            op.getLoc(), rewriter.getIndexAttr(
-                             dyn_cast<IntegerAttr>(constDataStride).getInt()));
+        auto constOp = arith::ConstantOp::create(
+            rewriter, op.getLoc(),
+            rewriter.getIndexAttr(
+                dyn_cast<IntegerAttr>(constDataStride).getInt()));
         newInitArgs.push_back(constOp.getResult());
         dataStride = constOp.getResult();
       } else {
@@ -2190,8 +2195,8 @@ void BlockDataParser::rewriteLoopOp(
     for (auto newInitArg : newInitArgs) {
       usedForRegionArgs.push_back(newInitArg ? true : false);
     }
-    newOp = rewriter.create<scf::ForOp>(
-        forOp.getLoc(), forOp.getLowerBound(), forOp.getUpperBound(),
+    newOp = scf::ForOp::create(
+        rewriter, forOp.getLoc(), forOp.getLowerBound(), forOp.getUpperBound(),
         forOp.getStep(), newInits,
         [&](OpBuilder &b, Location loc, Value iv, ValueRange args) {
           mapping.map(forOp.getInductionVar(), iv);
@@ -2271,8 +2276,8 @@ void BlockDataParser::rewriteLoopOp(
       }
     }
     resultTypes.append(indexCnt, rewriter.getIndexType());
-    newOp = rewriter.create<scf::WhileOp>(
-        whileOp.getLoc(), resultTypes, newInits,
+    newOp = scf::WhileOp::create(
+        rewriter, whileOp.getLoc(), resultTypes, newInits,
         [&](OpBuilder &b, Location loc, ValueRange args) {
           commonBodyBuilder(b, loc, true, args, whileOp.getBefore(),
                             whileOp.getBeforeArguments(),
@@ -2379,9 +2384,9 @@ void BlockDataParser::rewriteAddPtrToUnstrucMemAcc(
   auto &strides = data.getStridesRef();
   Value ptrOffset = adaptor.getOffset();
   Value zeroIdx =
-      rewriter.create<arith::ConstantOp>(loc, rewriter.getIndexAttr(0));
+      arith::ConstantOp::create(rewriter, loc, rewriter.getIndexAttr(0));
   Value oneIdx =
-      rewriter.create<arith::ConstantOp>(loc, rewriter.getIndexAttr(1));
+      arith::ConstantOp::create(rewriter, loc, rewriter.getIndexAttr(1));
   auto addptrRes = op.getResult();
   assert(addptrRes.hasOneUse() && "Invalid: tt.addptr has multiple users");
   auto loadOp = *(addptrRes.user_begin());
@@ -2392,7 +2397,7 @@ void BlockDataParser::rewriteAddPtrToUnstrucMemAcc(
   auto resTy = cast<ShapedType>(addptrRes.getType());
   auto resEPtrTy = resTy.getElementType();
   auto resETy = cast<triton::PointerType>(resEPtrTy).getPointeeType();
-  Value loaded = rewriter.create<tensor::EmptyOp>(loc, blockSizes, resETy);
+  Value loaded = tensor::EmptyOp::create(rewriter, loc, blockSizes, resETy);
   SmallVector<Value> initArgs;
   initArgs.push_back(loaded);
 
@@ -2419,16 +2424,16 @@ void BlockDataParser::rewriteAddPtrToUnstrucMemAcc(
         bB.setInsertionPointToStart(bB.getBlock());
 
         Value scalarOffsetRaw =
-            bB.create<tensor::ExtractOp>(bLoc, ptrOffset, allIVs);
-        Value scalarOffset = bB.create<arith::IndexCastOp>(
-            bLoc, bB.getIndexType(), scalarOffsetRaw);
+            tensor::ExtractOp::create(bB, bLoc, ptrOffset, allIVs);
+        Value scalarOffset = arith::IndexCastOp::create(
+            bB, bLoc, bB.getIndexType(), scalarOffsetRaw);
         OpFoldResult baseOffset = bB.getIndexAttr(0);
         for (auto ofr : data.getOffsetsRef()) {
           baseOffset = addOpFoldResult(baseOffset, ofr, bLoc, bB);
         }
         Value baseVal = getValueOrCreateConstantIndexOp(bB, bLoc, baseOffset);
         Value combinedOffset =
-            bB.create<arith::AddIOp>(bLoc, baseVal, scalarOffset);
+            arith::AddIOp::create(bB, bLoc, baseVal, scalarOffset);
         // Replace offset & size. Only single element.
         data.getOffsetsRef().clear();
         data.getOffsetsRef().push_back(combinedOffset);
@@ -2441,7 +2446,7 @@ void BlockDataParser::rewriteAddPtrToUnstrucMemAcc(
         // Move tt.load using this tt.addptr into this block
         loadOp->moveAfter(castOp);
         loadOp->setAttr("IndirectLoad", UnitAttr::get(op.getContext()));
-        bB.create<scf::YieldOp>(bLoc, iterArgs);
+        scf::YieldOp::create(bB, bLoc, iterArgs);
       });
 }
 

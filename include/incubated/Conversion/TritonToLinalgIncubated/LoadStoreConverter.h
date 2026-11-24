@@ -116,8 +116,8 @@ public:
       Type zeroTy = getI32SameShape(ptrTy);
       Value zeroVal =
           createScalarOrSplatConstant(rewriter, op.getLoc(), zeroTy, 0);
-      Value addptrVal = rewriter.create<triton::AddPtrOp>(op.getLoc(), ptrTy,
-                                                          ptrVal, zeroVal);
+      Value addptrVal = triton::AddPtrOp::create(rewriter, op.getLoc(), ptrTy,
+                                                 ptrVal, zeroVal);
       rewriter.modifyOpInPlace(
           op, [&]() { op->replaceUsesOfWith(ptrVal, addptrVal); });
       return success();
@@ -181,35 +181,35 @@ private:
     // that the ptr of op is of MemRefType
     Value binaryOp;
     if (rmwOp == triton::RMWOp::FADD) {
-      binaryOp = builder.create<arith::AddFOp>(loc, lhs, rhs);
+      binaryOp = arith::AddFOp::create(builder, loc, lhs, rhs);
     } else if (rmwOp == triton::RMWOp::ADD) {
-      binaryOp = builder.create<arith::AddIOp>(loc, lhs, rhs);
+      binaryOp = arith::AddIOp::create(builder, loc, lhs, rhs);
     } else if (rmwOp == triton::RMWOp::XOR) {
-      binaryOp = builder.create<arith::XOrIOp>(loc, lhs, rhs);
+      binaryOp = arith::XOrIOp::create(builder, loc, lhs, rhs);
     } else if (rmwOp == triton::RMWOp::OR) {
-      binaryOp = builder.create<arith::OrIOp>(loc, lhs, rhs);
+      binaryOp = arith::OrIOp::create(builder, loc, lhs, rhs);
     } else if (rmwOp == triton::RMWOp::AND) {
-      binaryOp = builder.create<arith::AndIOp>(loc, lhs, rhs);
+      binaryOp = arith::AndIOp::create(builder, loc, lhs, rhs);
     } else if (rmwOp == triton::RMWOp::MAX) {
       // Max/Min only support f32/i32 for now
       // Other type is not supported because of semantic.py
       if (isa<FloatType>(elementType)) {
-        binaryOp = builder.create<arith::MaxNumFOp>(loc, lhs, rhs);
+        binaryOp = arith::MaxNumFOp::create(builder, loc, lhs, rhs);
       } else {
-        binaryOp = builder.create<arith::MaxSIOp>(loc, lhs, rhs);
+        binaryOp = arith::MaxSIOp::create(builder, loc, lhs, rhs);
       }
     } else if (rmwOp == triton::RMWOp::MIN) {
       if (isa<FloatType>(elementType)) {
-        binaryOp = builder.create<arith::MinNumFOp>(loc, lhs, rhs);
+        binaryOp = arith::MinNumFOp::create(builder, loc, lhs, rhs);
       } else {
-        binaryOp = builder.create<arith::MinSIOp>(loc, lhs, rhs);
+        binaryOp = arith::MinSIOp::create(builder, loc, lhs, rhs);
       }
     } else if (rmwOp == triton::RMWOp::XCHG) {
       binaryOp = rhs;
     } else if (rmwOp == triton::RMWOp::UMAX) {
-      binaryOp = builder.create<arith::MaxUIOp>(loc, lhs, rhs);
+      binaryOp = arith::MaxUIOp::create(builder, loc, lhs, rhs);
     } else if (rmwOp == triton::RMWOp::UMIN) {
-      binaryOp = builder.create<arith::MinUIOp>(loc, lhs, rhs);
+      binaryOp = arith::MinUIOp::create(builder, loc, lhs, rhs);
     } else {
       op.emitOpError("unsupported atomic RMW operation: ");
       llvm_unreachable(

@@ -46,13 +46,14 @@
 using namespace mlir;
 using namespace triton;
 
-#define GEN_PASS_CLASSES
+#define GEN_PASS_DECL
+#define GEN_PASS_DEF_TRITONTOSTRUCTURED
 #include "triton-shared/Conversion/TritonToStructured/Passes.h.inc"
 
 namespace {
 
 class TritonToStructuredPass
-    : public TritonToStructuredBase<TritonToStructuredPass> {
+    : public ::impl::TritonToStructuredBase<TritonToStructuredPass> {
 
   static TupleType getStructuredStateTupleType(MLIRContext *context, Type t) {
     SmallVector<Type> tupleTypes{t};
@@ -138,7 +139,7 @@ public:
     // result is still being used by another tt.load or tt.store.
     auto materialize = [](OpBuilder &builder, Type resultType,
                           ValueRange inputs, Location loc) {
-      return builder.create<UnrealizedConversionCastOp>(loc, resultType, inputs)
+      return UnrealizedConversionCastOp::create(builder, loc, resultType, inputs)
           .getResult(0);
     };
 
@@ -153,8 +154,7 @@ public:
                                           TypeRange resultTypes,
                                           ValueRange inputs,
                                           Location loc) -> SmallVector<Value> {
-      return builder
-          .create<UnrealizedConversionCastOp>(loc, resultTypes, inputs.front())
+      return UnrealizedConversionCastOp::create(builder, loc, resultTypes, inputs.front())
           ->getResults();
     });
 
@@ -225,7 +225,7 @@ public:
     converter.addTargetMaterialization([](OpBuilder &builder,
                                           TypeRange resultTypes,
                                           ValueRange inputs, Location loc) {
-      auto placeholder = builder.create<tts::GetStructuredStateOp>(
+      auto placeholder = tts::GetStructuredStateOp::create(builder,
           loc, inputs.front().getDefiningOp()->getOperand(0));
       assert(llvm::equal(placeholder.getResultTypes(), resultTypes));
       return placeholder.getResults();

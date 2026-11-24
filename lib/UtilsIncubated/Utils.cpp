@@ -69,7 +69,7 @@ namespace mlir {
 
 static Value createConstIndexValueOp(const Location &loc, OpBuilder &b,
                                      int64_t value) {
-  return b.create<arith::ConstantOp>(loc, b.getIndexAttr(value)).getResult();
+  return arith::ConstantOp::create(b, loc, b.getIndexAttr(value)).getResult();
 }
 
 static std::optional<int64_t> getConstantOfAttr(const OpFoldResult &arg) {
@@ -163,11 +163,11 @@ Value getTransposedValue(Value source, const Location loc,
     transposedShape[i] = originalShape[perm[i]];
   }
 
-  Value transposeInit = rewriter.create<tensor::EmptyOp>(
-      loc, transposedShape, sourceType.getElementType());
+  Value transposeInit = tensor::EmptyOp::create(rewriter, loc, transposedShape,
+                                                sourceType.getElementType());
 
   Value transpose =
-      rewriter.create<linalg::TransposeOp>(loc, source, transposeInit, perm)
+      linalg::TransposeOp::create(rewriter, loc, source, transposeInit, perm)
           .getResults()[0];
 
   return transpose;
@@ -188,14 +188,14 @@ Value getScalarValue(Value operand, Location loc,
                   if (auto shapedType = dyn_cast<ShapedType>(resType)) {
                     resType = shapedType.getElementType();
                   }
-                  return rewriter.create<arith::SIToFPOp>(loc, resType, src);
+                  return arith::SIToFPOp::create(rewriter, loc, resType, src);
                 })
                 .Case<arith::TruncFOp>([&](Operation *op) {
                   auto resType = op->getResults()[0].getType();
                   if (auto shapedType = dyn_cast<ShapedType>(resType)) {
                     resType = shapedType.getElementType();
                   }
-                  return rewriter.create<arith::TruncFOp>(loc, resType, src);
+                  return arith::TruncFOp::create(rewriter, loc, resType, src);
                 })
                 .Default([](Operation *op) {
                   llvm_unreachable("unsupported op in generating ");
@@ -253,8 +253,8 @@ memref::SubViewOp makeSubViewOp(Value src,
                                     rewriter.getIndexAttr(1));
   auto dstType =
       memref::SubViewOp::inferResultType(srcType, offsets, sizes, strides);
-  return rewriter.create<memref::SubViewOp>(loc, dyn_cast<MemRefType>(dstType),
-                                            src, offsets, sizes, strides);
+  return memref::SubViewOp::create(rewriter, loc, dyn_cast<MemRefType>(dstType),
+                                   src, offsets, sizes, strides);
 }
 
 tensor::ExtractSliceOp
@@ -266,8 +266,8 @@ makeExtractSliceOp(Value src, const llvm::SmallVector<OpFoldResult> &offsets,
                                     rewriter.getIndexAttr(1));
   auto dstType =
       tensor::ExtractSliceOp::inferResultType(srcType, offsets, sizes, strides);
-  return rewriter.create<tensor::ExtractSliceOp>(loc, dstType, src, offsets,
-                                                 sizes, strides);
+  return tensor::ExtractSliceOp::create(rewriter, loc, dstType, src, offsets,
+                                        sizes, strides);
 }
 
 std::optional<Operation *> getFullShapeOp(Value val,
@@ -677,8 +677,9 @@ scf::ForOp createNestedLoops(
     return nullptr;
   }
 
-  auto loop = builder.create<scf::ForOp>(
-      loc, LBs[currentDim], UBs[currentDim], steps[currentDim], initArgs,
+  auto loop = scf::ForOp::create(
+      builder, loc, LBs[currentDim], UBs[currentDim], steps[currentDim],
+      initArgs,
       [&](OpBuilder &nestedBuilder, Location nestedLoc, Value iv,
           ValueRange iterArgs) {
         ivs.push_back(iv);
@@ -686,7 +687,7 @@ scf::ForOp createNestedLoops(
                                            currentDim + 1, totalDims, LBs, UBs,
                                            steps, ivs, iterArgs, bodyBuilder);
         if (innerLoop) {
-          nestedBuilder.create<scf::YieldOp>(loc, innerLoop.getResults());
+          scf::YieldOp::create(nestedBuilder, loc, innerLoop.getResults());
         }
       });
 
@@ -740,7 +741,7 @@ OpFoldResult addOpFoldResult(const OpFoldResult &lhs, const OpFoldResult &rhs,
     assert(isa<IndexType>(lhsValue.getType()));
   }
 
-  return b.create<arith::AddIOp>(loc, lhsValue, rhsValue).getResult();
+  return arith::AddIOp::create(b, loc, lhsValue, rhsValue).getResult();
 }
 
 OpFoldResult subOpFoldResult(const OpFoldResult &lhs, const OpFoldResult &rhs,
@@ -769,7 +770,7 @@ OpFoldResult subOpFoldResult(const OpFoldResult &lhs, const OpFoldResult &rhs,
     assert(isa<IndexType>(lhsValue.getType()));
   }
 
-  return b.create<arith::SubIOp>(loc, lhsValue, rhsValue).getResult();
+  return arith::SubIOp::create(b, loc, lhsValue, rhsValue).getResult();
 }
 
 OpFoldResult mulOpFoldResult(const OpFoldResult &lhs, const OpFoldResult &rhs,
@@ -808,7 +809,7 @@ OpFoldResult mulOpFoldResult(const OpFoldResult &lhs, const OpFoldResult &rhs,
     assert(isa<IndexType>(lhsValue.getType()));
   }
 
-  return b.create<arith::MulIOp>(loc, lhsValue, rhsValue).getResult();
+  return arith::MulIOp::create(b, loc, lhsValue, rhsValue).getResult();
 }
 
 OpFoldResult divOpFoldResult(const OpFoldResult &lhs, const OpFoldResult &rhs,
@@ -849,7 +850,7 @@ OpFoldResult divOpFoldResult(const OpFoldResult &lhs, const OpFoldResult &rhs,
     assert(isa<IndexType>(lhsValue.getType()));
   }
 
-  return b.create<arith::DivSIOp>(loc, lhsValue, rhsValue).getResult();
+  return arith::DivSIOp::create(b, loc, lhsValue, rhsValue).getResult();
 }
 
 OpFoldResult remOpFoldResult(const OpFoldResult &lhs, const OpFoldResult &rhs,
@@ -885,7 +886,7 @@ OpFoldResult remOpFoldResult(const OpFoldResult &lhs, const OpFoldResult &rhs,
     assert(isa<IndexType>(lhsValue.getType()));
   }
 
-  return b.create<arith::RemSIOp>(loc, lhsValue, rhsValue).getResult();
+  return arith::RemSIOp::create(b, loc, lhsValue, rhsValue).getResult();
 }
 
 OpFoldResult minOpFoldResult(const OpFoldResult &lhs, const OpFoldResult &rhs,
@@ -910,7 +911,7 @@ OpFoldResult minOpFoldResult(const OpFoldResult &lhs, const OpFoldResult &rhs,
     assert(isa<IndexType>(lhsValue.getType()));
   }
 
-  return b.create<arith::MinSIOp>(loc, lhsValue, rhsValue).getResult();
+  return arith::MinSIOp::create(b, loc, lhsValue, rhsValue).getResult();
 }
 
 OpFoldResult maxOpFoldResult(const OpFoldResult &lhs, const OpFoldResult &rhs,
@@ -935,7 +936,7 @@ OpFoldResult maxOpFoldResult(const OpFoldResult &lhs, const OpFoldResult &rhs,
     assert(isa<IndexType>(rhsValue.getType()));
   }
 
-  return b.create<arith::MaxSIOp>(loc, lhsValue, rhsValue).getResult();
+  return arith::MaxSIOp::create(b, loc, lhsValue, rhsValue).getResult();
 }
 
 void addReduceWithIndexAttr(ReduceWithIndexParams params,
@@ -1098,11 +1099,11 @@ OpFoldResult getOpFoldResultOfLayoutInfo(Value value, OpBuilder &builder) {
 
   if (!isa<IndexType>(value.getType())) {
     if (value.getType().isInteger(/*width*/ 1))
-      value = builder.create<arith::IndexCastUIOp>(
-          value.getLoc(), builder.getIndexType(), value);
+      value = arith::IndexCastUIOp::create(builder, value.getLoc(),
+                                           builder.getIndexType(), value);
     else
-      value = builder.create<arith::IndexCastOp>(value.getLoc(),
-                                                 builder.getIndexType(), value);
+      value = arith::IndexCastOp::create(builder, value.getLoc(),
+                                         builder.getIndexType(), value);
   }
 
   return value;
@@ -1266,14 +1267,14 @@ FailureOr<Value> specializeTypelessValueToConstant(TypelessValue value,
     auto otherTensorType =
         RankedTensorType::get(tensorType.getShape(), elemType);
     auto denseAttr = DenseElementsAttr::get(otherTensorType, *typedAttr);
-    return b.create<mlir::arith::ConstantOp>(loc, denseAttr).getResult();
+    return mlir::arith::ConstantOp::create(b, loc, denseAttr).getResult();
   }
   if (mlir::isa<mlir::FloatType>(type) || mlir::isa<mlir::IntegerType>(type)) {
     FailureOr<TypedAttr> typedAttr =
         specializeTypelessValueToAttr(value, type, b);
     if (failed(typedAttr))
       return failure();
-    return b.create<mlir::arith::ConstantOp>(loc, *typedAttr).getResult();
+    return mlir::arith::ConstantOp::create(b, loc, *typedAttr).getResult();
   }
   return failure();
 }
@@ -1299,13 +1300,13 @@ Value materializeValue(OpBuilder &builder, Location loc, OpFoldResult ofr) {
 
   auto intVal = getIntAttr(ofr);
   if (intVal.has_value()) {
-    return builder.create<arith::ConstantOp>(
-        loc, builder.getI32IntegerAttr(intVal.value()));
+    return arith::ConstantOp::create(builder, loc,
+                                     builder.getI32IntegerAttr(intVal.value()));
   }
   assert(intVal.has_value());
   return Value();
 
-  // return builder.create<arith::ConstantIndexOp>(
+  // return arith::ConstantIndexOp::create(builder,
   //     loc, dyn_cast<IntegerAttr>(attr).getInt());
 }
 
@@ -1323,7 +1324,7 @@ Value convertToIndexIfNeeded(Value input, const Location &loc, OpBuilder &b) {
   auto inputType = input.getType();
   if (auto intType = dyn_cast<IntegerType>(inputType)) {
     if (intType.isInteger(32) || intType.isInteger(64)) {
-      return b.create<arith::IndexCastOp>(loc, b.getIndexType(), input);
+      return arith::IndexCastOp::create(b, loc, b.getIndexType(), input);
     }
   }
   return input;

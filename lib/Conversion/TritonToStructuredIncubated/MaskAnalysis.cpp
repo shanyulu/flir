@@ -209,7 +209,7 @@ LogicalResult MaskState::parseIntScalar(Value scalar, const Location loc,
     return failure();
   }
   auto castOp =
-      builder.create<arith::IndexCastOp>(loc, builder.getIndexType(), scalar);
+      arith::IndexCastOp::create(builder, loc, builder.getIndexType(), scalar);
   this->scalar = castOp.getResult();
   return success();
 }
@@ -936,12 +936,12 @@ Value MaskState::createNewMask(const Location loc, OpBuilder &builder) {
     if (auto rhsInt = getIntAttr(rhs)) {
       auto rhsAttr =
           builder.getI32IntegerAttr(static_cast<int32_t>(rhsInt.value()));
-      return builder.create<arith::ConstantOp>(loc, rhsAttr).getResult();
+      return arith::ConstantOp::create(builder, loc, rhsAttr).getResult();
     }
     Value rhsValue = dyn_cast<Value>(rhs);
     if (rhsValue.getType().isIndex()) {
-      rhsValue = builder.create<arith::IndexCastOp>(loc, builder.getI32Type(),
-                                                    rhsValue);
+      rhsValue = arith::IndexCastOp::create(builder, loc, builder.getI32Type(),
+                                            rhsValue);
     }
     return rhsValue;
   };
@@ -953,20 +953,20 @@ Value MaskState::createNewMask(const Location loc, OpBuilder &builder) {
     auto indexI32RowType =
         RankedTensorType::get(shape[i], builder.getI32Type());
     Value newMask =
-        builder.create<triton::MakeRangeOp>(loc, indexI32RowType, 0, shape[i]);
+        triton::MakeRangeOp::create(builder, loc, indexI32RowType, 0, shape[i]);
 
     Value newOffset = createRhsValue(info.offset);
     if (newOffset.getType().isIndex()) {
-      newOffset = builder.create<arith::IndexCastOp>(loc, builder.getI32Type(),
-                                                     newOffset);
+      newOffset = arith::IndexCastOp::create(builder, loc, builder.getI32Type(),
+                                             newOffset);
     }
     Value splatRhs =
-        builder.create<triton::SplatOp>(loc, indexI32RowType, newOffset);
-    newMask = builder.create<arith::AddIOp>(loc, newMask, splatRhs);
+        triton::SplatOp::create(builder, loc, indexI32RowType, newOffset);
+    newMask = arith::AddIOp::create(builder, loc, newMask, splatRhs);
 
     auto rhsValue = createRhsValue(info.rhs);
     auto splatOp =
-        builder.create<triton::SplatOp>(loc, indexI32RowType, rhsValue);
+        triton::SplatOp::create(builder, loc, indexI32RowType, rhsValue);
 
     if (info.currentType == dimInfo::CompareType::deafaultType) {
       LLVM_DEBUG({
@@ -976,21 +976,21 @@ Value MaskState::createNewMask(const Location loc, OpBuilder &builder) {
       });
       return nullptr;
     }
-    auto cmpOp = builder.create<arith::CmpIOp>(loc,
-                                               info.compareTypeIsLess()
-                                                   ? arith::CmpIPredicate::slt
-                                                   : arith::CmpIPredicate::sge,
-                                               newMask, splatOp.getResult());
+    auto cmpOp = arith::CmpIOp::create(builder, loc,
+                                       info.compareTypeIsLess()
+                                           ? arith::CmpIPredicate::slt
+                                           : arith::CmpIPredicate::sge,
+                                       newMask, splatOp.getResult());
 
     auto expandValue = cmpOp.getResult();
     for (size_t j = 0; j < stateInfo.size(); ++j) {
       if (j == i)
         continue;
-      expandValue = builder.create<triton::ExpandDimsOp>(loc, expandValue, j);
+      expandValue = triton::ExpandDimsOp::create(builder, loc, expandValue, j);
     }
 
     auto broadcastValue =
-        builder.create<triton::BroadcastOp>(loc, maskShape, expandValue);
+        triton::BroadcastOp::create(builder, loc, maskShape, expandValue);
 
     cacheResults.push_back(broadcastValue);
   }
@@ -1005,7 +1005,7 @@ Value MaskState::createNewMask(const Location loc, OpBuilder &builder) {
   }
   newMask = cacheResults[0];
   for (size_t i = 1; i < cacheResults.size(); ++i) {
-    newMask = builder.create<arith::AndIOp>(loc, newMask, cacheResults[i]);
+    newMask = arith::AndIOp::create(builder, loc, newMask, cacheResults[i]);
   }
   return newMask;
 }

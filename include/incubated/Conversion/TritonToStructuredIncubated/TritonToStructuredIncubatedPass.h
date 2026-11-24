@@ -28,7 +28,7 @@
 #include "mlir/Transforms/DialectConversion.h"
 #include "triton/Dialect/Triton/IR/Dialect.h"
 
-#define GEN_PASS_CLASSES
+#define GEN_PASS_DEF_TRITONTOSTRUCTUREDINCUBATED
 #include "incubated/Conversion/TritonToStructuredIncubated/Passes.h.inc"
 
 namespace mlir {
@@ -47,7 +47,8 @@ using namespace mlir;
 using namespace triton;
 
 class TritonToStructuredIncubatedPass
-    : public TritonToStructuredIncubatedBase<TritonToStructuredIncubatedPass> {
+    : public ::impl::TritonToStructuredIncubatedBase<
+          TritonToStructuredIncubatedPass> {
 public:
   TritonToStructuredIncubatedPass() = default;
 

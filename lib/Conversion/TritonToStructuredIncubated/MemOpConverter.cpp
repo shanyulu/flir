@@ -109,9 +109,9 @@ LogicalResult LoadConverter::matchAndRewrite(triton::LoadOp op,
     return failure();
   }
 
-  auto loadOp = rewriter.create<triton::LoadOp>(loc, newPtr, newMask, newOther,
-                                                op.getCache(), op.getEvict(),
-                                                op.getIsVolatile());
+  auto loadOp =
+      triton::LoadOp::create(rewriter, loc, newPtr, newMask, newOther,
+                             op.getCache(), op.getEvict(), op.getIsVolatile());
 
   // insert implicit ops
   auto broadCastResult =
@@ -163,7 +163,7 @@ LogicalResult StoreConverter::matchAndRewrite(triton::StoreOp op,
   // insert sync_block_lock
   auto lockVar = createSyncBlockLockVar(rewriter, loc);
   if (oldMask && !newMask) {
-    rewriter.create<hivm::SyncBlockLockOp>(loc, lockVar);
+    hivm::SyncBlockLockOp::create(rewriter, loc, lockVar);
   }
 
   auto selectResult =
@@ -173,13 +173,13 @@ LogicalResult StoreConverter::matchAndRewrite(triton::StoreOp op,
   auto permuteResult =
       tf.materializeImplicitPermute(reshapeResult, loc, rewriter);
 
-  auto storeOp = rewriter.create<triton::StoreOp>(
-      loc, newPtr, permuteResult, newMask, op.getBoundaryCheck(), op.getCache(),
-      op.getEvict());
+  auto storeOp = triton::StoreOp::create(rewriter, loc, newPtr, permuteResult,
+                                         newMask, op.getBoundaryCheck(),
+                                         op.getCache(), op.getEvict());
 
   // insert sync_block_unlock
   if (oldMask && !newMask) {
-    rewriter.create<hivm::SyncBlockUnlockOp>(loc, lockVar);
+    hivm::SyncBlockUnlockOp::create(rewriter, loc, lockVar);
   }
   rewriter.eraseOp(op);
   return success();
@@ -213,16 +213,16 @@ Value MemOpTransformer::materializeImplicitBroadcast(
   if (srcType.isIntOrFloat()) {
     auto broadCastType = RankedTensorType::get(broadCastShape, srcType);
     auto splatOp =
-        rewriter.create<triton::SplatOp>(loc, broadCastType, srcTensor);
+        triton::SplatOp::create(rewriter, loc, broadCastType, srcTensor);
     return splatOp.getResult();
   }
 
-  auto init = rewriter.create<tensor::EmptyOp>(
-      loc, broadCastShape,
+  auto init = tensor::EmptyOp::create(
+      rewriter, loc, broadCastShape,
       cast<ShapedType>(srcTensor.getType()).getElementType());
 
-  auto broadCastOp = rewriter.create<linalg::BroadcastOp>(loc, srcTensor, init,
-                                                          broadCastIndex);
+  auto broadCastOp = linalg::BroadcastOp::create(rewriter, loc, srcTensor, init,
+                                                 broadCastIndex);
 
   return broadCastOp->getResult(0);
 }
@@ -268,9 +268,9 @@ Value MemOpTransformer::materializeImplicitReshape(Value srcTensor,
   auto targetShapeType = RankedTensorType::get(
       targetShape, cast<ShapedType>(srcTensor.getType()).getElementType());
   auto targetShapeValue =
-      rewriter.create<arith::ConstantOp>(loc, targetShapeAttr);
-  auto reshapeOp = rewriter.create<tensor::ReshapeOp>(
-      loc, targetShapeType, srcTensor, targetShapeValue);
+      arith::ConstantOp::create(rewriter, loc, targetShapeAttr);
+  auto reshapeOp = tensor::ReshapeOp::create(rewriter, loc, targetShapeType,
+                                             srcTensor, targetShapeValue);
   return reshapeOp.getResult();
 }
 
@@ -290,18 +290,19 @@ Value MemOpTransformer::materializeImplicitSelect(Value srcTensor, Value mask,
   }
 
   if (currentType == MemType::store) {
-    auto loadOp = rewriter.create<triton::LoadOp>(loc, other, nullptr, nullptr,
-                                                  ArrayRef<int32_t>(), nullptr);
+    auto loadOp = triton::LoadOp::create(rewriter, loc, other, nullptr, nullptr,
+                                         ArrayRef<int32_t>(), nullptr);
     other = loadOp.getResult();
   }
 
   if (!other) {
     auto elementType = TensorType.getElementType();
-    auto emptyOp = rewriter.create<tensor::EmptyOp>(loc, TensorType.getShape(),
-                                                    elementType);
+    auto emptyOp = tensor::EmptyOp::create(rewriter, loc, TensorType.getShape(),
+                                           elementType);
     other = emptyOp.getResult();
   }
-  auto selectOp = rewriter.create<arith::SelectOp>(loc, mask, srcTensor, other);
+  auto selectOp =
+      arith::SelectOp::create(rewriter, loc, mask, srcTensor, other);
   return selectOp->getResult(0);
 }
 
@@ -335,7 +336,8 @@ Value MemOpTransformer::materializeImplicitPermute(Value srcTensor,
   }
 
   auto outTy = RankedTensorType::get(outShape, inTy.getElementType());
-  auto transOp = rewriter.create<triton::TransOp>(loc, outTy, srcTensor, order);
+  auto transOp =
+      triton::TransOp::create(rewriter, loc, outTy, srcTensor, order);
   return transOp.getResult();
 }
 
@@ -538,10 +540,10 @@ Value MemOpTransformer::createNewOther(Value oldOther, const Location loc,
       targetShape);
   auto targetShapeType = RankedTensorType::get(targetShape, elementType);
   auto targetShapeValue =
-      rewriter.create<arith::ConstantOp>(loc, targetShapeAttr);
+      arith::ConstantOp::create(rewriter, loc, targetShapeAttr);
 
-  auto reshapeOp = rewriter.create<tensor::ReshapeOp>(
-      loc, targetShapeType, oldOther, targetShapeValue);
+  auto reshapeOp = tensor::ReshapeOp::create(rewriter, loc, targetShapeType,
+                                             oldOther, targetShapeValue);
 
   return reshapeOp.getResult();
 }
@@ -568,7 +570,7 @@ hivm::CreateSyncBlockLockOp createSyncBlockLockVar(OpBuilder &builder,
   Type memrefType = MemRefType::get(shape, elementType);
 
   auto createSyncBlockLockOp =
-      builder.create<hivm::CreateSyncBlockLockOp>(loc, memrefType, Value());
+      hivm::CreateSyncBlockLockOp::create(builder, loc, memrefType, Value());
   return createSyncBlockLockOp;
 }
 } // namespace MemOpConverter

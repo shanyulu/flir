@@ -195,18 +195,19 @@ DeinterleaveStatusOptimization(triton::LoadOp op,
     }
     auto [castOffset, indexMode] =
         recountReinterpretCastOffset(originCastOffset, rewriter);
-    auto newCastOp = rewriter.create<memref::ReinterpretCastOp>(
-        loc, srcType, reinterpretCast.getViewSource(), castOffset, castSize,
-        castStride);
+    auto newCastOp = memref::ReinterpretCastOp::create(
+        rewriter, loc, srcType, reinterpretCast.getViewSource(), castOffset,
+        castSize, castStride);
 
     // 3. Create new memref allocOp
-    auto newAllocOp = rewriter.create<memref::AllocOp>(
-        loc, MemRefType::get(srcType.getShape(), srcType.getElementType()));
+    auto newAllocOp = memref::AllocOp::create(
+        rewriter, loc,
+        MemRefType::get(srcType.getShape(), srcType.getElementType()));
 
     // 4. Implement memref copy and bufferization back to tensor
-    rewriter.create<memref::CopyOp>(loc, newCastOp.getResult(), newAllocOp);
-    Value newTensor = rewriter.create<bufferization::ToTensorOp>(
-        loc,
+    memref::CopyOp::create(rewriter, loc, newCastOp.getResult(), newAllocOp);
+    Value newTensor = bufferization::ToTensorOp::create(
+        rewriter, loc,
         RankedTensorType::get(srcType.getShape(), srcType.getElementType()),
         newAllocOp, true /* restrict */, true /* writable */);
 
@@ -234,8 +235,8 @@ DeinterleaveStatusOptimization(triton::LoadOp op,
     extractStrides.back() = rewriter.getIndexAttr(2);
     extractSizes.back() = rewriter.getIndexAttr(srcType.getShape().back() / 2);
 
-    Value deinterleaveSlice = rewriter.create<tensor::ExtractSliceOp>(
-        loc, newTensor, extractOffsets, extractSizes, extractStrides);
+    Value deinterleaveSlice = tensor::ExtractSliceOp::create(
+        rewriter, loc, newTensor, extractOffsets, extractSizes, extractStrides);
 
     rewriter.replaceOp(op, deinterleaveSlice);
     return success();
@@ -272,16 +273,17 @@ LogicalResult DeinterleaveStatusWithMaskOptimization(
     auto [castOffset, indexMode] =
         recountReinterpretCastOffset(originCastOffset, rewriter);
 
-    auto newCastOp = rewriter.create<memref::ReinterpretCastOp>(
-        loc, srcType, reinterpretCast.getViewSource(), castOffset, castSize,
-        castStride);
+    auto newCastOp = memref::ReinterpretCastOp::create(
+        rewriter, loc, srcType, reinterpretCast.getViewSource(), castOffset,
+        castSize, castStride);
 
     // 3. Create new memref allocOp
     // To reuse existing linalg::fill, here need to change insertion point
     auto savedInsertPoint = rewriter.saveInsertionPoint();
     rewriter.setInsertionPointAfterValue(localMem);
-    auto newAllocOp = rewriter.create<memref::AllocOp>(
-        loc, MemRefType::get(srcType.getShape(), srcType.getElementType()));
+    auto newAllocOp = memref::AllocOp::create(
+        rewriter, loc,
+        MemRefType::get(srcType.getShape(), srcType.getElementType()));
     rewriter.restoreInsertionPoint(savedInsertPoint);
 
     // 4. Broadcast other value by linalg.fill if necessary
@@ -299,8 +301,9 @@ LogicalResult DeinterleaveStatusWithMaskOptimization(
       assert(llvm::isa<scf::IfOp>(originFillOp->getParentOp()));
       auto ifOp = llvm::dyn_cast<scf::IfOp>(originFillOp->getParentOp());
 
-      auto newFillOp = ifOp.getThenBodyBuilder().create<linalg::FillOp>(
-          originFillOp.getLoc(), originFillOp.getInputs(),
+      OpBuilder thenBuilder = ifOp.getThenBodyBuilder();
+      auto newFillOp = linalg::FillOp::create(
+          thenBuilder, originFillOp.getLoc(), originFillOp.getInputs(),
           ValueRange{newAllocOp});
       rewriter.replaceOp(originFillOp, newFillOp);
     }
@@ -323,15 +326,15 @@ LogicalResult DeinterleaveStatusWithMaskOptimization(
     auto allocSubviewType = memref::SubViewOp::inferResultType(
         newAllocOp.getType(), subviewOffsets, subviewSizes, subviewStrides);
 
-    memref::SubViewOp srcSubview = rewriter.create<memref::SubViewOp>(
-        loc, llvm::cast<MemRefType>(argSubviewType), newCastOp, subviewOffsets,
-        subviewSizes, subviewStrides);
-    memref::SubViewOp dstSubview = rewriter.create<memref::SubViewOp>(
-        loc, llvm::cast<MemRefType>(allocSubviewType), newAllocOp,
+    memref::SubViewOp srcSubview = memref::SubViewOp::create(
+        rewriter, loc, llvm::cast<MemRefType>(argSubviewType), newCastOp,
         subviewOffsets, subviewSizes, subviewStrides);
-    rewriter.create<memref::CopyOp>(loc, srcSubview, dstSubview);
-    Value newTensor = rewriter.create<bufferization::ToTensorOp>(
-        loc,
+    memref::SubViewOp dstSubview = memref::SubViewOp::create(
+        rewriter, loc, llvm::cast<MemRefType>(allocSubviewType), newAllocOp,
+        subviewOffsets, subviewSizes, subviewStrides);
+    memref::CopyOp::create(rewriter, loc, srcSubview, dstSubview);
+    Value newTensor = bufferization::ToTensorOp::create(
+        rewriter, loc,
         RankedTensorType::get(srcType.getShape(), srcType.getElementType()),
         newAllocOp, true /* restrict */, true /* writable */);
 
@@ -358,8 +361,8 @@ LogicalResult DeinterleaveStatusWithMaskOptimization(
     extractStrides.back() = rewriter.getIndexAttr(2);
     extractSizes.back() = rewriter.getIndexAttr(srcType.getShape().back() / 2);
 
-    Value deinterleaveSlice = rewriter.create<tensor::ExtractSliceOp>(
-        loc, newTensor, extractOffsets, extractSizes, extractStrides);
+    Value deinterleaveSlice = tensor::ExtractSliceOp::create(
+        rewriter, loc, newTensor, extractOffsets, extractSizes, extractStrides);
 
     rewriter.replaceOp(op, deinterleaveSlice);
     return success();
@@ -452,8 +455,8 @@ InterleaveStatusOptimization(SmallVector<Operation *> materializeVec) {
   auto dstType = expandInterleaveMemRefType(firstReinterpretCastOp.getType());
 
   // 2. New tensor::EmptyOp
-  auto emptyTensor = builder.create<tensor::EmptyOp>(loc, dstType.getShape(),
-                                                     dstType.getElementType());
+  auto emptyTensor = tensor::EmptyOp::create(builder, loc, dstType.getShape(),
+                                             dstType.getElementType());
 
   // 3. New insert_slice from materialization source into new empty tensor
   SmallVector<OpFoldResult> insertOffsets(dstType.getRank(),
@@ -471,8 +474,8 @@ InterleaveStatusOptimization(SmallVector<Operation *> materializeVec) {
   } else {
     insertOffsets.back() = builder.getIndexAttr(0);
   }
-  auto insertFirst = builder.create<tensor::InsertSliceOp>(
-      loc,
+  auto insertFirst = tensor::InsertSliceOp::create(
+      builder, loc,
       llvm::dyn_cast<bufferization::MaterializeInDestinationOp>(
           materializeVec[0])
           .getSource(),
@@ -483,8 +486,8 @@ InterleaveStatusOptimization(SmallVector<Operation *> materializeVec) {
   } else {
     insertOffsets.back() = builder.getIndexAttr(0);
   }
-  auto insertSecond = builder.create<tensor::InsertSliceOp>(
-      loc,
+  auto insertSecond = tensor::InsertSliceOp::create(
+      builder, loc,
       llvm::dyn_cast<bufferization::MaterializeInDestinationOp>(
           materializeVec[1])
           .getSource(),
@@ -495,13 +498,13 @@ InterleaveStatusOptimization(SmallVector<Operation *> materializeVec) {
   auto newCastStride = firstReinterpretCastOp.getConstifiedMixedStrides();
   newCastSize.back() = builder.getIndexAttr(dstType.getShape().back());
   newCastStride.back() = builder.getIndexAttr(1);
-  auto newCastOp = builder.create<memref::ReinterpretCastOp>(
-      loc, dstType, firstReinterpretCastOp.getViewSource(), newCastOffset,
-      newCastSize, newCastStride);
+  auto newCastOp = memref::ReinterpretCastOp::create(
+      builder, loc, dstType, firstReinterpretCastOp.getViewSource(),
+      newCastOffset, newCastSize, newCastStride);
 
   // 5. Create new bufferization::MaterializeInDestinationOp
-  auto newStoreOp = builder.create<bufferization::MaterializeInDestinationOp>(
-      loc, insertSecond.getResult(), newCastOp.getResult());
+  auto newStoreOp = bufferization::MaterializeInDestinationOp::create(
+      builder, loc, insertSecond.getResult(), newCastOp.getResult());
   // Setting writable is necessary as dst is memref type
   newStoreOp.setWritable(true);
 
@@ -633,8 +636,8 @@ InterleaveStatusWithMaskOptimization(SmallVector<Operation *> materializeVec) {
   auto dstType = expandInterleaveMemRefType(firstReinterpretCastOp.getType());
 
   // 2. New tensor::EmptyOp
-  auto emptyTensor = builder.create<tensor::EmptyOp>(loc, dstType.getShape(),
-                                                     dstType.getElementType());
+  auto emptyTensor = tensor::EmptyOp::create(builder, loc, dstType.getShape(),
+                                             dstType.getElementType());
 
   // 3. New insert_slice from extract_slice source into new empty tensor
   SmallVector<OpFoldResult> insertOffsets(dstType.getRank(),
@@ -652,8 +655,8 @@ InterleaveStatusWithMaskOptimization(SmallVector<Operation *> materializeVec) {
   } else {
     insertOffsets.back() = builder.getIndexAttr(0);
   }
-  auto insertFirst = builder.create<tensor::InsertSliceOp>(
-      loc, firstSrcExtractSlice.getSource(), emptyTensor.getResult(),
+  auto insertFirst = tensor::InsertSliceOp::create(
+      builder, loc, firstSrcExtractSlice.getSource(), emptyTensor.getResult(),
       insertOffsets, insertSizes, insertStrides);
 
   if (indexModeRecord.second == IndexMode::ODD_MODE) {
@@ -661,8 +664,8 @@ InterleaveStatusWithMaskOptimization(SmallVector<Operation *> materializeVec) {
   } else {
     insertOffsets.back() = builder.getIndexAttr(0);
   }
-  auto insertSecond = builder.create<tensor::InsertSliceOp>(
-      loc, secondSrcExtractSlice.getSource(), insertFirst.getResult(),
+  auto insertSecond = tensor::InsertSliceOp::create(
+      builder, loc, secondSrcExtractSlice.getSource(), insertFirst.getResult(),
       insertOffsets, insertSizes, insertStrides);
 
   // 4. To enable store with mask, create new extract_slice
@@ -676,8 +679,8 @@ InterleaveStatusWithMaskOptimization(SmallVector<Operation *> materializeVec) {
   }
   extractSizes.back() = builder.getIndexAttr(
       getConstantIntValue(extractSizes.back()).value() * 2);
-  auto newSrcExtractSlice = builder.create<tensor::ExtractSliceOp>(
-      loc, insertSecond.getResult(), extractOffsets, extractSizes,
+  auto newSrcExtractSlice = tensor::ExtractSliceOp::create(
+      builder, loc, insertSecond.getResult(), extractOffsets, extractSizes,
       extractStrides);
 
   // 5. Reinterpret_cast block arg
@@ -685,21 +688,22 @@ InterleaveStatusWithMaskOptimization(SmallVector<Operation *> materializeVec) {
   auto newCastStride = firstReinterpretCastOp.getConstifiedMixedStrides();
   newCastSize.back() = builder.getIndexAttr(dstType.getShape().back());
   newCastStride.back() = builder.getIndexAttr(1);
-  auto newCastOp = builder.create<memref::ReinterpretCastOp>(
-      loc, dstType, firstReinterpretCastOp.getViewSource(), newCastOffset,
-      newCastSize, newCastStride);
+  auto newCastOp = memref::ReinterpretCastOp::create(
+      builder, loc, dstType, firstReinterpretCastOp.getViewSource(),
+      newCastOffset, newCastSize, newCastStride);
 
   // 6. Create new memref::SubViewOp of above new reinterpret_cast
   // Here could reuse shape info of new extract_slice
   auto dstSubviewType = memref::SubViewOp::inferResultType(
       dstType, extractOffsets, extractSizes, extractStrides);
-  auto newSubviewOpOfReCast = builder.create<memref::SubViewOp>(
-      loc, llvm::cast<MemRefType>(dstSubviewType), newCastOp, extractOffsets,
-      extractSizes, extractStrides);
+  auto newSubviewOpOfReCast = memref::SubViewOp::create(
+      builder, loc, llvm::cast<MemRefType>(dstSubviewType), newCastOp,
+      extractOffsets, extractSizes, extractStrides);
 
   // 7. Create new bufferization::MaterializeInDestinationOp
-  auto newStoreOp = builder.create<bufferization::MaterializeInDestinationOp>(
-      loc, newSrcExtractSlice.getResult(), newSubviewOpOfReCast.getResult());
+  auto newStoreOp = bufferization::MaterializeInDestinationOp::create(
+      builder, loc, newSrcExtractSlice.getResult(),
+      newSubviewOpOfReCast.getResult());
   // Setting writable is necessary as dst is memref type
   newStoreOp.setWritable(true);
 

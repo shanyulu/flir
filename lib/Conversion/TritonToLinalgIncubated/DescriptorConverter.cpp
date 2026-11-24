@@ -118,13 +118,13 @@ LogicalResult DescriptorLoadConverter::matchAndRewrite(
     tensorShapeValues.push_back(static_cast<int32_t>(dim));
   }
   Value tensorPtr =
-      rewriter.create<triton::MakeTensorPtrOp>(loc,
-                                               desc.base,         // base
-                                               desc.shape,        // shape
-                                               desc.strides,      // strides
-                                               indices,           // offset
-                                               tensorShapeValues, // tensorShape
-                                               computeOrder(blockShape) // order
+      triton::MakeTensorPtrOp::create(rewriter, loc,
+                                      desc.base,               // base
+                                      desc.shape,              // shape
+                                      desc.strides,            // strides
+                                      indices,                 // offset
+                                      tensorShapeValues,       // tensorShape
+                                      computeOrder(blockShape) // order
       );
   // 3. replace tt.load
   auto boundaryCheck = getFullBoundaryCheckAttr(rewriter, blockShape);
@@ -144,8 +144,8 @@ LogicalResult DescriptorLoadConverter::matchAndRewrite(
   if (auto a = op->getAttrOfType<BoolAttr>("isVolatile"))
     isVolatile = a;
 
-  auto newLoad = rewriter.create<triton::LoadOp>(
-      loc, descTy.getSignlessBlockType(), tensorPtr,
+  auto newLoad = triton::LoadOp::create(
+      rewriter, loc, descTy.getSignlessBlockType(), tensorPtr,
       Value(), // mask
       Value(), // other
       boundaryCheck,
@@ -178,31 +178,31 @@ LogicalResult DescriptorStoreConverter::matchAndRewrite(
     tensorShapeValues.push_back(static_cast<int32_t>(dim));
   }
   Value tensorPtr =
-      rewriter.create<triton::MakeTensorPtrOp>(loc,
-                                               desc.base,         // base
-                                               desc.shape,        // shape
-                                               desc.strides,      // strides
-                                               indices,           // offset
-                                               tensorShapeValues, // tensorShape
-                                               computeOrder(blockShape) // order
+      triton::MakeTensorPtrOp::create(rewriter, loc,
+                                      desc.base,               // base
+                                      desc.shape,              // shape
+                                      desc.strides,            // strides
+                                      indices,                 // offset
+                                      tensorShapeValues,       // tensorShape
+                                      computeOrder(blockShape) // order
       );
 
   // 3. replace tt.store
   Value valueToStore = adaptor.getSrc();
 
   auto maskType = RankedTensorType::get(blockShape, rewriter.getI1Type());
-  rewriter.create<arith::ConstantOp>(loc,
-                                     DenseElementsAttr::get(maskType, true));
+  arith::ConstantOp::create(rewriter, loc,
+                            DenseElementsAttr::get(maskType, true));
   auto boundaryCheck = getFullBoundaryCheckAttr(rewriter, blockShape);
   auto cacheModifier = triton::CacheModifierAttr::get(
       rewriter.getContext(), triton::CacheModifier::NONE);
   auto evictionPolicy = triton::EvictionPolicyAttr::get(
       rewriter.getContext(), triton::EvictionPolicy::NORMAL);
 
-  auto newStore = rewriter.create<triton::StoreOp>(loc, tensorPtr, valueToStore,
-                                                   Value(), // mask
-                                                   boundaryCheck, cacheModifier,
-                                                   evictionPolicy);
+  auto newStore =
+      triton::StoreOp::create(rewriter, loc, tensorPtr, valueToStore,
+                              Value(), // mask
+                              boundaryCheck, cacheModifier, evictionPolicy);
 
   rewriter.eraseOp(op);
   return success();

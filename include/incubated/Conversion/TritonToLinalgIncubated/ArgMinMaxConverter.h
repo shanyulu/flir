@@ -127,10 +127,9 @@ class ArgMinMaxBaseConverter : public OpConversionPattern<triton::ReduceOp> {
                       ArrayRef<int64_t> shape, Value fillValue,
                       Location loc) const {
     Value initTensor =
-        rewriter.create<tensor::EmptyOp>(loc, shape, fillValue.getType());
-    return rewriter
-        .create<linalg::FillOp>(loc, ValueRange{fillValue},
-                                ValueRange{initTensor})
+        tensor::EmptyOp::create(rewriter, loc, shape, fillValue.getType());
+    return linalg::FillOp::create(rewriter, loc, ValueRange{fillValue},
+                                  ValueRange{initTensor})
         .result();
   }
 
@@ -250,7 +249,7 @@ public:
 
     auto reduceWithIndexParams = getReduceWithIndexParams(op);
     auto valuesAccBaseVal =
-        rewriter.create<arith::ConstantOp>(loc, valueType, valueAttr);
+        arith::ConstantOp::create(rewriter, loc, valueType, valueAttr);
     int indicesInitValue =
         (llvm::succeeded(reduceWithIndexParams) &&
          reduceWithIndexParams->tieBreakType == TieBreakType::RIGHT)
@@ -258,8 +257,9 @@ public:
             : std::numeric_limits<int32_t>::max();
 
     auto indexType = elemTypes[1];
-    auto indicesAccBaseVal = rewriter.create<arith::ConstantOp>(
-        loc, indexType, rewriter.getIntegerAttr(indexType, indicesInitValue));
+    auto indicesAccBaseVal = arith::ConstantOp::create(
+        rewriter, loc, indexType,
+        rewriter.getIntegerAttr(indexType, indicesInitValue));
 
     auto valueResultType = dyn_cast<RankedTensorType>(op.getType(0));
     const auto isScalarReduce = valueResultType == nullptr;
@@ -271,8 +271,8 @@ public:
         getInitTensor(rewriter, reductionResultShape, valuesAccBaseVal, loc),
         getInitTensor(rewriter, reductionResultShape, indicesAccBaseVal, loc)};
 
-    auto linalgOp = rewriter.create<linalg::ReduceOp>(
-        loc, adaptor.getOperands(), outputs,
+    auto linalgOp = linalg::ReduceOp::create(
+        rewriter, loc, adaptor.getOperands(), outputs,
         SmallVector<int64_t>{adaptor.getAxis()},
         [&](OpBuilder &b, Location loc, ValueRange inputs) {
           assert(inputs.size() == 4);
@@ -290,7 +290,7 @@ public:
               llvm::map_to_vector(tritonYield->getOperands(), [&](Value val) {
                 return mapping.lookup(val);
               });
-          b.create<linalg::YieldOp>(loc, results);
+          linalg::YieldOp::create(b, loc, results);
         });
 
     // before we rewrite the argmax reduce op, we know it has return value
@@ -303,10 +303,10 @@ public:
 
     if (isScalarReduce) {
       SmallVector<Value> reduceResults{
-          rewriter.create<tensor::ExtractOp>(
-              loc, valueType, linalgOp.getResults()[0], ValueRange{}),
-          rewriter.create<tensor::ExtractOp>(
-              loc, indexType, linalgOp.getResults()[1], ValueRange{})};
+          tensor::ExtractOp::create(rewriter, loc, valueType,
+                                    linalgOp.getResults()[0], ValueRange{}),
+          tensor::ExtractOp::create(rewriter, loc, indexType,
+                                    linalgOp.getResults()[1], ValueRange{})};
       rewriter.replaceOp(op, reduceResults);
     } else {
       rewriter.replaceOp(op, linalgOp);

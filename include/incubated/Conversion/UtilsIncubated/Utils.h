@@ -169,8 +169,8 @@ void createSimpleNestedLoops(OpBuilder &rewriter, Location loc, Value target,
   MemRefType type = cast<MemRefType>(target.getType());
   int rank = type.getRank();
 
-  Value zero = rewriter.create<arith::ConstantIndexOp>(loc, 0);
-  Value one = rewriter.create<arith::ConstantIndexOp>(loc, 1);
+  Value zero = arith::ConstantIndexOp::create(rewriter, loc, 0);
+  Value one = arith::ConstantIndexOp::create(rewriter, loc, 1);
 
   llvm::SmallVector<scf::ForOp, kMaxTiledRank> loops;
   llvm::SmallVector<Value, kMaxTiledRank> ivs;
@@ -178,12 +178,12 @@ void createSimpleNestedLoops(OpBuilder &rewriter, Location loc, Value target,
   for (int dim : loopDims) {
     Value ub;
     if (type.isDynamicDim(dim)) {
-      ub = rewriter.create<memref::DimOp>(loc, target, dim).getResult();
+      ub = memref::DimOp::create(rewriter, loc, target, dim).getResult();
     } else {
-      ub = rewriter.create<arith::ConstantIndexOp>(loc, type.getDimSize(dim));
+      ub = arith::ConstantIndexOp::create(rewriter, loc, type.getDimSize(dim));
     }
 
-    auto forOp = rewriter.create<scf::ForOp>(loc, zero, ub, one);
+    auto forOp = scf::ForOp::create(rewriter, loc, zero, ub, one);
     rewriter.setInsertionPointToStart(forOp.getBody());
     loops.push_back(forOp);
     ivs.push_back(forOp.getInductionVar());

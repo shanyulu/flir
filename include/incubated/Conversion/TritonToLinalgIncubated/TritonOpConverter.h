@@ -184,14 +184,14 @@ public:
     llvm::SmallVector<Value> inputs;
     for (auto input : op->getOperands()) {
       auto blkTy = RankedTensorType::get({(int64_t)1}, input.getType());
-      auto inputSplat = rewriter.create<triton::SplatOp>(loc, blkTy, input);
+      auto inputSplat = triton::SplatOp::create(rewriter, loc, blkTy, input);
       inputs.push_back(inputSplat.getResult());
     }
-    auto blkOp = rewriter.create<MathOp>(loc, inputs);
+    auto blkOp = MathOp::create(rewriter, loc, inputs);
     Value offset =
-        rewriter.create<arith::ConstantOp>(loc, rewriter.getIndexAttr(0));
+        arith::ConstantOp::create(rewriter, loc, rewriter.getIndexAttr(0));
     auto extractOp =
-        rewriter.create<tensor::ExtractOp>(loc, blkOp.getResult(), offset);
+        tensor::ExtractOp::create(rewriter, loc, blkOp.getResult(), offset);
     rewriter.replaceOp(op, extractOp);
     return success();
   }
@@ -343,11 +343,12 @@ protected:
     assert(constantType.isIntOrFloat());
 
     if (constantType.isInteger()) {
-      return rewriter.create<arith::ConstantOp>(
-          loc, constantType, rewriter.getIntegerAttr(constantType, 0));
+      return arith::ConstantOp::create(
+          rewriter, loc, constantType,
+          rewriter.getIntegerAttr(constantType, 0));
     }
-    return rewriter.create<arith::ConstantOp>(
-        loc, constantType, rewriter.getFloatAttr(constantType, 0.f));
+    return arith::ConstantOp::create(rewriter, loc, constantType,
+                                     rewriter.getFloatAttr(constantType, 0.f));
   }
 
   arith::ConstantOp getReductionBaseConstOp(ConversionPatternRewriter &rewriter,
@@ -407,8 +408,8 @@ protected:
               return nullptr;
             });
 
-    return rewriter.create<arith::ConstantOp>(reductionOp->getLoc(),
-                                              constantType, attr);
+    return arith::ConstantOp::create(rewriter, reductionOp->getLoc(),
+                                     constantType, attr);
   }
 
   bool requiresF32Conversion(const Type elemType,
@@ -426,17 +427,17 @@ protected:
     return llvm::TypeSwitch<Operation *, Value>(reductionOp)
         .template Case<arith::AddFOp, arith::MulFOp>([&](auto reductionOp) {
           if (convertLhsToF32Precision) {
-            lhs = b.create<arith::ExtFOp>(loc, Float32Type::get(b.getContext()),
-                                          lhs);
+            lhs = arith::ExtFOp::create(b, loc,
+                                        Float32Type::get(b.getContext()), lhs);
           }
-          return b.create<decltype(reductionOp)>(loc, lhs, rhs);
+          return decltype(reductionOp)::create(b, loc, lhs, rhs);
         })
         .template Case<arith::AddIOp, arith::MulIOp, arith::MaximumFOp,
                        arith::MaxNumFOp, arith::MinimumFOp, arith::MinNumFOp,
                        arith::MinSIOp, arith::MinUIOp, arith::MaxSIOp,
                        arith::MaxUIOp, arith::AndIOp, arith::OrIOp,
                        arith::XOrIOp>([&](auto reductionOp) {
-          return b.create<decltype(reductionOp)>(loc, lhs, rhs);
+          return decltype(reductionOp)::create(b, loc, lhs, rhs);
         })
         .Default([](Operation *op) {
           op->dump();

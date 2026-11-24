@@ -68,17 +68,16 @@ void replaceArgs(ValueRange args, RewriterBase &rewriter,
       } else {
         rewriter.setInsertionPointAfterValue(arg);
       }
-      auto tempVar = rewriter
-                         .create<UnrealizedConversionCastOp>(
-                             arg.getLoc(), arg.getType(), ValueRange({}))
+      auto tempVar = UnrealizedConversionCastOp::create(
+                         rewriter, arg.getLoc(), arg.getType(), ValueRange({}))
                          ->getResult(0);
       parse(arg, arg.getLoc(), rewriter, offsetMap);
       auto src = offsetMap.at(arg).getPtr();
       rewriter.replaceAllUsesWith(arg, tempVar);
       arg.setType(RankedTensorType::get(tensorType.getShape(),
                                         rewriter.getIntegerType(64)));
-      src = rewriter.create<triton::SplatOp>(arg.getLoc(), tempVar.getType(),
-                                             src);
+      src = triton::SplatOp::create(rewriter, arg.getLoc(), tempVar.getType(),
+                                    src);
       rewriter.replaceOpWithNewOp<triton::AddPtrOp>(
           tempVar.getDefiningOp(), tempVar.getType(), src, arg);
     } else if (auto ptrType = dyn_cast<triton::PointerType>(arg.getType())) {
@@ -88,9 +87,8 @@ void replaceArgs(ValueRange args, RewriterBase &rewriter,
       } else {
         rewriter.setInsertionPointAfterValue(arg);
       }
-      auto tempVar = rewriter
-                         .create<UnrealizedConversionCastOp>(
-                             arg.getLoc(), arg.getType(), ValueRange({}))
+      auto tempVar = UnrealizedConversionCastOp::create(
+                         rewriter, arg.getLoc(), arg.getType(), ValueRange({}))
                          ->getResult(0);
       parse(arg, arg.getLoc(), rewriter, offsetMap);
       rewriter.replaceAllUsesWith(arg, tempVar);
@@ -206,18 +204,18 @@ void replacePtrArguments(triton::FuncOp funcOp,
                          llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap) {
   IRRewriter rewriter(funcOp.getContext());
   rewriter.setInsertionPointToStart(&funcOp.getBody().front());
-  Value tempVar = rewriter
-                      .create<UnrealizedConversionCastOp>(
-                          funcOp.getLoc(), rewriter.getI32Type(), ValueRange{})
-                      ->getResult(0);
+  Value tempVar =
+      UnrealizedConversionCastOp::create(rewriter, funcOp.getLoc(),
+                                         rewriter.getI32Type(), ValueRange{})
+          ->getResult(0);
   std::function<WalkResult(Operation *)> convertTensorPtr = [&](Operation *op) {
     IRMapping mapping;
     Operation *newOp = nullptr;
     rewriter.setInsertionPointAfter(op);
     if (auto forOp = dyn_cast<scf::ForOp>(op)) {
-      newOp = rewriter.create<scf::ForOp>(
-          forOp.getLoc(), forOp.getLowerBound(), forOp.getUpperBound(),
-          forOp.getStep(),
+      newOp = scf::ForOp::create(
+          rewriter, forOp.getLoc(), forOp.getLowerBound(),
+          forOp.getUpperBound(), forOp.getStep(),
           constructOperands(forOp.getInitArgs(), tempVar, mapping),
           [&](OpBuilder &b, Location loc, Value iv, ValueRange args) {
             mapping.map(forOp.getInductionVar(), iv);
@@ -231,13 +229,13 @@ void replacePtrArguments(triton::FuncOp funcOp,
               b.clone(bodyOp, mapping);
             }
             auto yieldOp = cast<scf::YieldOp>(forOp.getBody()->getTerminator());
-            b.create<scf::YieldOp>(
-                yieldOp.getLoc(),
+            scf::YieldOp::create(
+                b, yieldOp.getLoc(),
                 constructOperands(yieldOp.getOperands(), tempVar, mapping));
           });
     } else if (auto whileOp = dyn_cast<scf::WhileOp>(op)) {
-      newOp = rewriter.create<scf::WhileOp>(
-          whileOp.getLoc(), constructTypes(whileOp->getResultTypes()),
+      newOp = scf::WhileOp::create(
+          rewriter, whileOp.getLoc(), constructTypes(whileOp->getResultTypes()),
           constructOperands(whileOp.getInits(), tempVar, mapping),
           [&](OpBuilder &b, Location loc, ValueRange args) {
             auto newArgIter = args.begin();
@@ -250,8 +248,8 @@ void replacePtrArguments(triton::FuncOp funcOp,
               b.clone(bodyOp, mapping);
             }
             auto conditionOp = whileOp.getConditionOp();
-            b.create<scf::ConditionOp>(
-                conditionOp.getLoc(),
+            scf::ConditionOp::create(
+                b, conditionOp.getLoc(),
                 mapping.lookup(conditionOp.getCondition()),
                 constructOperands(conditionOp.getArgs(), tempVar, mapping));
           },
@@ -266,21 +264,21 @@ void replacePtrArguments(triton::FuncOp funcOp,
               b.clone(bodyOp, mapping);
             }
             auto yieldOp = whileOp.getYieldOp();
-            b.create<scf::YieldOp>(
-                yieldOp.getLoc(),
+            scf::YieldOp::create(
+                b, yieldOp.getLoc(),
                 constructOperands(yieldOp.getOperands(), tempVar, mapping));
           });
     } else if (auto ifOp = dyn_cast<scf::IfOp>(op);
                ifOp && ifOp->getNumResults() > 0) {
-      newOp = rewriter.create<scf::IfOp>(
-          ifOp.getLoc(), ifOp.getCondition(),
+      newOp = scf::IfOp::create(
+          rewriter, ifOp.getLoc(), ifOp.getCondition(),
           [&](OpBuilder &b, Location loc) {
             for (auto &bodyOp : ifOp.thenBlock()->without_terminator()) {
               b.clone(bodyOp, mapping);
             }
             auto yieldOp = ifOp.thenYield();
-            b.create<scf::YieldOp>(
-                yieldOp.getLoc(),
+            scf::YieldOp::create(
+                b, yieldOp.getLoc(),
                 constructOperands(yieldOp.getOperands(), tempVar, mapping));
           },
           [&](OpBuilder &b, Location loc) {
@@ -288,8 +286,8 @@ void replacePtrArguments(triton::FuncOp funcOp,
               b.clone(bodyOp, mapping);
             }
             auto yieldOp = ifOp.elseYield();
-            b.create<scf::YieldOp>(
-                yieldOp.getLoc(),
+            scf::YieldOp::create(
+                b, yieldOp.getLoc(),
                 constructOperands(yieldOp.getOperands(), tempVar, mapping));
           });
     } else if (auto loopOp = dyn_cast<LoopLikeOpInterface>(op)) {

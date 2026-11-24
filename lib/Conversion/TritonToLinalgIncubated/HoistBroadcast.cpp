@@ -139,14 +139,14 @@ BroadcastHoister::parseAddptr(triton::AddPtrOp addptrOp, const Location &loc,
 
   auto elementType = offsetType.getElementType();
   auto broadcastType = RankedTensorType::get({tensorSizes}, elementType);
-  auto broadcastedOffset = rewriter.create<triton::BroadcastOp>(
-      loc, broadcastType, addptrOp.getOffset());
+  auto broadcastedOffset = triton::BroadcastOp::create(
+      rewriter, loc, broadcastType, addptrOp.getOffset());
 
   auto ptrType = dyn_cast<triton::PointerType>(source.getType());
   auto ptrTensorType = RankedTensorType::get({tensorSizes}, ptrType);
 
-  auto newAddPtrOp = rewriter.create<triton::AddPtrOp>(
-      loc, ptrTensorType, broadcastedPtr, broadcastedOffset);
+  auto newAddPtrOp = triton::AddPtrOp::create(
+      rewriter, loc, ptrTensorType, broadcastedPtr, broadcastedOffset);
 
   size_t hoistDim = -1;
   for (size_t i = 0; i < offsetType.getShape().size(); ++i) {
@@ -181,7 +181,7 @@ BroadcastHoister::parseSplat(triton::SplatOp splatOp, const Location &loc,
 
   auto ptrType = dyn_cast<triton::PointerType>(source.getType());
   auto ptrTensorType = RankedTensorType::get({tensorSizes}, ptrType);
-  auto newSplatOp = rewriter.create<triton::SplatOp>(loc, ptrTensorType, src);
+  auto newSplatOp = triton::SplatOp::create(rewriter, loc, ptrTensorType, src);
   broadcastMap[splatOp.getResult()] = newSplatOp.getResult();
   return success();
 }

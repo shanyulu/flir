@@ -187,14 +187,15 @@ void PtrOffsetInfo::setZeroOffset() {
   OpBuilder builder(ptr.getContext());
   builder.setInsertionPointToStart(ptr.getParentBlock());
   if (auto tensorType = dyn_cast<RankedTensorType>(ptr.getType())) {
-    offset = builder.create<arith::ConstantOp>(
-        ptr.getLoc(), DenseElementsAttr::get(
-                          RankedTensorType::get(tensorType.getShape(),
-                                                builder.getIntegerType(64)),
-                          builder.getZeroAttr(builder.getIntegerType(64))));
+    offset = arith::ConstantOp::create(
+        builder, ptr.getLoc(),
+        DenseElementsAttr::get(
+            RankedTensorType::get(tensorType.getShape(),
+                                  builder.getIntegerType(64)),
+            builder.getZeroAttr(builder.getIntegerType(64))));
   } else {
-    offset = builder.create<arith::ConstantOp>(ptr.getLoc(),
-                                               builder.getI64IntegerAttr(0));
+    offset = arith::ConstantOp::create(builder, ptr.getLoc(),
+                                       builder.getI64IntegerAttr(0));
   }
   setOffset(offset);
 }
@@ -446,14 +447,14 @@ void parseAddPtr(triton::AddPtrOp op, const Location &loc,
     if (offsetElementType.getWidth() != 64) {
       auto newOffsetType = RankedTensorType::get(offsetType.getShape(),
                                                  rewriter.getIntegerType(64));
-      offsetValue = rewriter.create<arith::ExtSIOp>(op.getLoc(), newOffsetType,
-                                                    offsetValue);
+      offsetValue = arith::ExtSIOp::create(rewriter, op.getLoc(), newOffsetType,
+                                           offsetValue);
     }
   } else {
     auto offsetIntType = cast<IntegerType>(offsetValue.getType());
     if (offsetIntType.getWidth() != 64) {
-      offsetValue = rewriter.create<arith::ExtSIOp>(
-          op.getLoc(), rewriter.getIntegerType(64), offsetValue);
+      offsetValue = arith::ExtSIOp::create(
+          rewriter, op.getLoc(), rewriter.getIntegerType(64), offsetValue);
     }
   }
   LLVM_DEBUG({
@@ -461,8 +462,8 @@ void parseAddPtr(triton::AddPtrOp op, const Location &loc,
     os << "[parseAddPtr] Adding offset\n";
     os << ptrOffsetInfo.getOffset() << '\n' << offsetValue << '\n';
   });
-  Value offset = rewriter.create<arith::AddIOp>(
-      op.getLoc(), ptrOffsetInfo.getOffset(), offsetValue);
+  Value offset = arith::AddIOp::create(rewriter, op.getLoc(),
+                                       ptrOffsetInfo.getOffset(), offsetValue);
   LLVM_DEBUG({
     auto &os = llvm::dbgs();
     os << "[parseAddPtr] offset is\n" << offset << '\n';
@@ -507,8 +508,9 @@ void parseSplat(triton::SplatOp op, const Location &loc, RewriterBase &rewriter,
     auto dstShape = dstType.getShape();
     rewriter.setInsertionPoint(op);
     Value valueOffset = srcOffsetInfo.getOffset();
-    Value offset = rewriter.create<triton::SplatOp>(
-        loc, RankedTensorType::get(dstShape, rewriter.getIntegerType(64)),
+    Value offset = triton::SplatOp::create(
+        rewriter, loc,
+        RankedTensorType::get(dstShape, rewriter.getIntegerType(64)),
         valueOffset);
     dstOffsetInfo.setOffset(offset);
   }
@@ -639,7 +641,7 @@ void parseBitcast(triton::BitcastOp op, const Location &loc,
     if (auto tensorType = dyn_cast<RankedTensorType>(ptrType))
       ptrType = tensorType.getElementType();
     rewriter.setInsertionPoint(op);
-    ptr = rewriter.create<triton::BitcastOp>(loc, ptrType, ptr);
+    ptr = triton::BitcastOp::create(rewriter, loc, ptrType, ptr);
     offsetMap[dst] =
         PtrOffsetInfo(ptr, srcOffsetInfo.getOffset(), srcStructured);
   } else {
@@ -718,8 +720,8 @@ void parseBroadcast(triton::BroadcastOp op, const Location &loc,
     RewriterBase::InsertionGuard guard(rewriter);
     rewriter.setInsertionPoint(op);
     Value valueOffset = srcOffsetInfo.getOffset();
-    Value offset = rewriter.create<triton::BroadcastOp>(
-        loc,
+    Value offset = triton::BroadcastOp::create(
+        rewriter, loc,
         RankedTensorType::get(dstType.getShape(), rewriter.getIntegerType(64)),
         valueOffset);
 
@@ -754,7 +756,7 @@ void parseExpandDims(triton::ExpandDimsOp op, const Location &loc,
     rewriter.setInsertionPoint(op);
     Value valueOffset = srcOffsetInfo.getOffset();
     Value offset =
-        rewriter.create<triton::ExpandDimsOp>(loc, valueOffset, op.getAxis());
+        triton::ExpandDimsOp::create(rewriter, loc, valueOffset, op.getAxis());
 
     offsetMap[dst].setOffset(offset);
   }
@@ -976,7 +978,7 @@ void parseAdvance(triton::AdvanceOp op, const Location &loc,
   rewriter.setInsertionPoint(op);
   for (auto [curOffset, opOffset] : llvm::zip(offsets, op.getOffsets())) {
     curOffset =
-        rewriter.create<arith::AddIOp>(op.getLoc(), curOffset, opOffset);
+        arith::AddIOp::create(rewriter, op.getLoc(), curOffset, opOffset);
   }
 }
 
@@ -1117,8 +1119,8 @@ void parseExtractSlice(tensor::ExtractSliceOp op, const Location &loc,
     rewriter.setInsertionPoint(op);
     auto offsetType = getExtractSlicedType(op.getMixedSizes(), droppedDims,
                                            getElementTypeOrSelf(srcOffset));
-    srcOffset = rewriter.create<tensor::ExtractSliceOp>(
-        op.getLoc(), offsetType, srcOffset, op.getMixedOffsets(),
+    srcOffset = tensor::ExtractSliceOp::create(
+        rewriter, op.getLoc(), offsetType, srcOffset, op.getMixedOffsets(),
         op.getMixedSizes(), op.getMixedStrides());
   }
   SmallVector<PtrOffsetInfo::AxisInfo> dstStructured;
@@ -1145,9 +1147,9 @@ void parseInsertSlice(tensor::InsertSliceOp op, const Location &loc,
   if (auto srcOffset = srcPtrInfo.getOffset()) {
     RewriterBase::InsertionGuard guard(rewriter);
     rewriter.setInsertionPoint(op);
-    auto resOffset = rewriter.create<tensor::InsertSliceOp>(
-        op.getLoc(), srcOffset, dstPtrInfo.getOffset(), op.getMixedOffsets(),
-        op.getMixedSizes(), op.getMixedStrides());
+    auto resOffset = tensor::InsertSliceOp::create(
+        rewriter, op.getLoc(), srcOffset, dstPtrInfo.getOffset(),
+        op.getMixedOffsets(), op.getMixedSizes(), op.getMixedStrides());
     auto srcPtr = srcPtrInfo.getPtr();
     auto dstPtr = dstPtrInfo.getPtr();
     assert(srcPtr == dstPtr && "ptrInfo for insert slice should be consistent");
@@ -1202,8 +1204,9 @@ void parseInsert(tensor::InsertOp op, const Location &loc,
   if (auto srcOffset = srcPtrInfo.getOffset()) {
     RewriterBase::InsertionGuard guard(rewriter);
     rewriter.setInsertionPoint(op);
-    auto resOffset = rewriter.create<tensor::InsertOp>(
-        op.getLoc(), srcOffset, dstPtrInfo.getOffset(), op.getIndices());
+    auto resOffset =
+        tensor::InsertOp::create(rewriter, op.getLoc(), srcOffset,
+                                 dstPtrInfo.getOffset(), op.getIndices());
     auto srcPtr = srcPtrInfo.getPtr();
     auto dstPtr = dstPtrInfo.getPtr();
     resPtrInfo.setPtr(srcPtr);

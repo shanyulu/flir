@@ -138,8 +138,8 @@ tensor::ExtractSliceOp MaskState::getExtractSlice(Value source,
 
   auto dstRType = tensor::ExtractSliceOp::inferResultType(sourceRType, offsets,
                                                           dims, strides);
-  return builder.create<tensor::ExtractSliceOp>(loc, dstRType, source, offsets,
-                                                dims, strides);
+  return tensor::ExtractSliceOp::create(builder, loc, dstRType, source, offsets,
+                                        dims, strides);
 }
 
 tensor::ExtractSliceOp MaskState::getExtractSlice(
@@ -150,8 +150,8 @@ tensor::ExtractSliceOp MaskState::getExtractSlice(
 
   auto dstRType = tensor::ExtractSliceOp::inferResultType(sourceRType, offsets,
                                                           dims, strides);
-  return builder.create<tensor::ExtractSliceOp>(loc, dstRType, source, offsets,
-                                                dims, strides);
+  return tensor::ExtractSliceOp::create(builder, loc, dstRType, source, offsets,
+                                        dims, strides);
 }
 
 // insertSlice
@@ -159,8 +159,8 @@ tensor::InsertSliceOp MaskState::getInsertSlice(Value source, Value dest,
                                                 const Location &loc,
                                                 OpBuilder &builder) const {
   SmallVector<OpFoldResult> strides(getRank(), builder.getIndexAttr(1));
-  return builder.create<tensor::InsertSliceOp>(loc, source, dest, offsets, dims,
-                                               strides);
+  return tensor::InsertSliceOp::create(builder, loc, source, dest, offsets,
+                                       dims, strides);
 }
 
 tensor::InsertSliceOp
@@ -168,8 +168,8 @@ MaskState::getInsertSlice(Value source, Value dest, const Location &loc,
                           OpBuilder &builder, SmallVector<OpFoldResult> offsets,
                           SmallVector<OpFoldResult> dims) const {
   SmallVector<OpFoldResult> strides(getRank(), builder.getIndexAttr(1));
-  return builder.create<tensor::InsertSliceOp>(loc, source, dest, offsets, dims,
-                                               strides);
+  return tensor::InsertSliceOp::create(builder, loc, source, dest, offsets,
+                                       dims, strides);
 }
 
 memref::SubViewOp MaskState::getSubview(Value source, const Location &loc,
@@ -185,8 +185,8 @@ memref::SubViewOp MaskState::getSubview(Value source, const Location &loc,
 
   auto dstType = memref::SubViewOp::inferResultType(sourceType, fixedOffsets,
                                                     fixedDims, strides);
-  return builder.create<memref::SubViewOp>(
-      loc, cast<MemRefType>(dstType), source, fixedOffsets, fixedDims, strides);
+  return memref::SubViewOp::create(builder, loc, cast<MemRefType>(dstType),
+                                   source, fixedOffsets, fixedDims, strides);
 }
 
 // In llvm later version, for each dimension, assert that:
@@ -243,8 +243,8 @@ static memref::SubViewOp createSubview(Value src, const Location &loc,
   auto srcType = cast<MemRefType>(src.getType());
   auto dstType =
       memref::SubViewOp::inferResultType(srcType, offsets, sizes, strides);
-  return builder.create<memref::SubViewOp>(loc, cast<MemRefType>(dstType), src,
-                                           offsets, sizes, strides);
+  return memref::SubViewOp::create(builder, loc, cast<MemRefType>(dstType), src,
+                                   offsets, sizes, strides);
 }
 
 LogicalResult MaskState::addStateScalar(const MaskState &state,
@@ -735,9 +735,11 @@ LogicalResult MaskState::parseInsert(tensor::InsertOp insertOp,
     if (llvm::all_of(tensorType.getShape(),
                      [](int64_t dim) { return dim == 1; })) {
       SmallVector<Value> indices(
-          tensorType.getRank(), builder.create<arith::ConstantIndexOp>(loc, 0));
+          tensorType.getRank(),
+          arith::ConstantIndexOp::create(builder, loc, 0));
       auto scalarlizeTensor =
-          builder.create<tensor::ExtractOp>(loc, insertOp, indices).getResult();
+          tensor::ExtractOp::create(builder, loc, insertOp, indices)
+              .getResult();
       this->offsets = SmallVector<OpFoldResult>(tensorType.getRank(),
                                                 builder.getIndexAttr(0));
       this->dims = SmallVector<OpFoldResult>(tensorType.getRank(),
